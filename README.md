@@ -27,8 +27,10 @@ $ cd <your-ModelExplorer-folder>/source_code/build
 
 The code can then be compiled using the following two commands:
 
+```
 $ cmake ..
 $ make 
+```
 
 The executable “ModelExplorer” will then be located in the “build” folder and will require the “arial.ttf” font file to be located in the same folder with the executable. 
 
