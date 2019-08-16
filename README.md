@@ -68,4 +68,4 @@ Please consult the user manual for a full description of the capabilites of the 
 
 ## Licence
 
-The software is provided as a binary executable with the corresponding source code under the Eclipse Public License v2.0, a copy of which can be found in LICENCE.txt.
+The software is provided as a binary executable with the corresponding source code under the Eclipse Public License v2.0, a copy of which can be found in LICENCE.md.
