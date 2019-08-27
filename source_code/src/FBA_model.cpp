@@ -421,6 +421,18 @@ int FBA_model::purge_disconnected_reactions(bool truncate)
     return purge_reactions(rem_reacs);
 }
 
+int FBA_model::purge_dead(int dead_type, bool truncate)
+{
+    if(truncate) truncate_saves();
+    int num_reactions_before = (int)reactions.size();
+	int num_species_before = (int)species.size();
+    vector<string> rem_reacs;
+	vector<string> rem_specs;
+    for(const auto &i:reactions) if(i.second.dead[dead_type]) rem_reacs.push_back(i.first);
+	for(const auto &i:species) if(i.second.dead[dead_type]) rem_specs.push_back(i.first);
+    return purge_reactions(rem_reacs) + purge_species(rem_specs,true,true);
+}
+
 void find_subgraph(const string &n, const int &curr_group, map<string,set<string>> &adjacency,map<string,int> &subgraphs)
 {
     if(subgraphs.at(n)==0)
@@ -496,13 +508,17 @@ int FBA_model::purge_disconnected_clusters(bool truncate)
     return purged_reacs + purged_specs;
 }
 
-int FBA_model::purge_reactions(const vector<string> &rem_reacs, bool truncate)
+int FBA_model::purge_reactions(const vector<string> &rem_reacs, bool truncate, bool add_to_previous)
 {
 	if(truncate) truncate_saves();
     if(rem_reacs.size()>0)
     {
-        current_pos++;
-        saves.resize(saves.size()+1);
+		if(!add_to_previous)
+		{
+			current_pos++;
+			saves.resize(saves.size()+1);
+		}
+		if(saves.back().a!=REMOVED && saves.back().a!=NAN_ACTION) printf(A_RED "\n\nWarning! FBA_model::purge_reactions trying to write over save of different type!\n\n" A_RES);
         saves.back().a = REMOVED;
         saves.back().num = current_pos;
         for(const string &i:rem_reacs) 
@@ -514,13 +530,17 @@ int FBA_model::purge_reactions(const vector<string> &rem_reacs, bool truncate)
     return rem_reacs.size();
 }
 
-int FBA_model::purge_species(const vector<string> &rem_specs, bool truncate) /// Bruteforce purges all given species
+int FBA_model::purge_species(const vector<string> &rem_specs, bool truncate, bool add_to_previous) /// Bruteforce purges all given species
 {
 	if(truncate) truncate_saves();
     if(rem_specs.size()>0)
     {
-        current_pos++;
-        saves.resize(saves.size()+1);
+		if(!add_to_previous)
+		{
+			current_pos++;
+			saves.resize(saves.size()+1);
+		}
+		if(saves.back().a!=REMOVED && saves.back().a!=NAN_ACTION) printf(A_RED "\n\nWarning! FBA_model::purge_species trying to write over save of different type!\n\n" A_RES);
         saves.back().a = REMOVED;
         saves.back().num = current_pos;
         for(const string &i:rem_specs) 

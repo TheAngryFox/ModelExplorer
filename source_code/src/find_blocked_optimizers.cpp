@@ -892,7 +892,7 @@ map<int,bool> SINKS_find_incons(map<int,map<int,pair<int,double>>> rtos,
 	{
 		vector<int> columnIndex;
 		vector<double> columnValue;
-		columnIndex.push_back(i);
+			columnIndex.push_back(i);
 		columnValue.push_back(-1.0);
 		linear_model.addColumn((int)columnIndex.size(), &columnIndex[0], &columnValue[0], 0.0, 1.0, 1.0);
 	}

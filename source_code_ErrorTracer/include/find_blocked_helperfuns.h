@@ -39,6 +39,7 @@ struct PCC
 	static map<int,map<int,pair<int,double>>> get_stor();
 	static map<int,map<int,pair<int,double>>> get_rtos();
 	void addIncon(int s, incons i);
+	void remIncon(int s);
 	void addIncons(map<int,incons> i);
 	bool isConsistent() const;
 	bool getFlux(int s, double &val, bool &rev) const; // get the flux value of the PCC into a species s and whether it is reversible

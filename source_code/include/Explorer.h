@@ -63,7 +63,7 @@ class Explorer;
 
 enum struct event_type {idle,move_mouse,m_leave_disp,rmb_down,lmb_down,rmb_up,lmb_up,scroll,keyboard};
 enum struct response_type {do_nothing,load_model,zoom,lmb_down_custom,lmb_up_custom,lmb_move_mouse,rmb_down_custom,rmb_up_custom,rmb_move_mouse,cust_move_mouse,
-                    ver_area_resize,hor_area_resize,ver_area_resize_hov,hor_area_resize_hov,at_least_inside,special_lock,lmb_click};
+                    ver_area_resize,hor_area_resize,ver_area_resize_hov,hor_area_resize_hov,at_least_inside,special_lock,lmb_click,tab_key};
 enum struct button_type {click,menu_click,switcher,palette,menu_root,principal_menu_root};
 
 class Area
@@ -881,14 +881,23 @@ private:
     map<string,int> r_id_to_index;  /// inverse of index_to_id but only for the reactions
     map<string,int> s_id_to_index;  /// inverse of index_to_id but only for the species
     Array<int> links;               /// links between nodes
+
+	int tree_type = 0;				/// Tree type. 0 - uptake, 1 - excretion (switched using tab)
     Array<ancestor> frozen_tree;    /// The tree structure in ancestral searching
     int frozen_tree_centre = -1;
+
+
 	Array<int> parents;             /// parents of each species/reaction
+	Array<int> children;			/// children of each species/reaction
 	Array<int> neighbours;			/// Nearest neighbours of each node
     Array<int> reactants;           /// Reactants of each reaction
     Array<int> products;            /// Products of each reaction
+
     vector<int> reac_order;         /// The distanace of reaction from inflow
     vector<int> spec_order;         /// The distance of species from inflow
+    vector<int> reac_order_out;     /// The distanace of reaction from outflow
+    vector<int> spec_order_out;     /// The distance of species from outflow
+
     vector<bool> reversible;        /// Reaction reversible or not?
     map<string,vector<Point> > cmprts; /// Compartments for drawing
 	vector<int> subgraphs;			/// Reactions and species divided into subgraphs (number indicates subgraph index)
@@ -902,9 +911,10 @@ private:
     vector<bool> BIDIR_dead_specs;
     vector<bool> SINK_dead;         /// Dead or living reaction (sink)
     vector<bool> SINK_dead_specs;
-    vector<bool> dead;               /// Dead or living REACTIONS (the above three arrays are copied into it for use)
+    vector<bool> dead;               /// Reactions and species which cannot be directly derived from inflows
+	vector<bool> dead_out;		     /// Reactions and species which cannot be directly secreted through outflows
     vector<bool> dead_specs;         /// Dead or living SPECIES (the above three arrays are copied into it for use)
-    vector<bool> dead_reacs;
+    vector<bool> dead_reacs;         /// Dead or living REACTIONS (the above three arrays are copied into it for use)
 	vector<bool> dead_r_and_s;
 
     vector<int> objectives;
@@ -1027,6 +1037,7 @@ private:
 
 	/// Temporary edited compartment, species, reaction
 
+	bool editing_entity = false; // tells if the current item has been edited, restricting mode switching
 	int edited_item = -1;
 	int current_aoe_action = -1;
 	string temp_id;

@@ -31,79 +31,6 @@ struct node
 	node(int n) : spec_num(n) {}; 
 };
 
-void connect (node &n, int pos, int &index, vector<int> &stack, 
-			  vector<node> &nodes, vector<vector<int>> &edges, map<int,int> &spectonode,
-			  const map<int,map<int,pair<int,double>>> &nrtos,
-			  map<int,bool> &expanded, 
-			  const map<int,map<int,pair<int,double>>> &nstor,
-			  map<int,set<int>> &STCs) 
-{
-	n.index = index;
-	n.lowlink = index;
-	index++;
-	stack.push_back(pos);
-	n.onStack = true;
-
-	// Expand the surrounding reactions
-	for(const auto &i:nstor.at(n.spec_num))
-	{
-		// if not already expanded into the edges and pointing out from node
-		if(!expanded.at(i.first) && i.second.first!=1) 
-		{
-			int cur_dir = i.second.first;
-			vector<int> reactants;
-			vector<int> products;
-			for(const auto &j:nrtos.at(i.first))
-			{
-				if(cur_dir%2==0)
-				{
-					if(j.second.first%2==0) reactants.push_back(spectonode[j.first]);
-					else products.push_back(spectonode[j.first]);
-				}
-				else
-				{
-					if(j.second.first%2==1) reactants.push_back(spectonode[j.first]);
-					else products.push_back(spectonode[j.first]);
-				}
-			}
-			for(const auto &j:reactants)
-			{
-				for(const auto &k:products)
-				{
-					edges[j].push_back(k);
-				}
-			}
-			expanded.at(i.first) = true;
-		}
-	}
-
-	for(const auto &i:edges[pos])
-	{
-		if(nodes[i].index==-1) // if undefined
-		{
-			connect(nodes[i],i,index,stack,nodes,edges,spectonode,nrtos,expanded,nstor,STCs);
-			n.lowlink = min(n.lowlink,nodes[i].lowlink);
-		}
-		else if (nodes[i].onStack)
-		{
-			n.lowlink = min(n.lowlink,nodes[i].index);
-		}
-	}
-
-	if(n.lowlink == n.index)
-	{
-		int w;
-		STCs[n.index];
-		do
-		{
-			w = stack.back();
-			STCs.at(n.index).insert(nodes[w].spec_num);
-			nodes[w].onStack = false;
-			stack.pop_back();
-		} while(w!=pos);
-	}
-};
-
 int find_BM (int target, set<int> &unnasr, set<int> &unnass,
 			  pair<set<int>,set<int>> &BM,
 			  const map<int,bool> &r_cons, 
@@ -133,29 +60,6 @@ int find_BM (int target, set<int> &unnasr, set<int> &unnass,
 	else return 0;
 }
 
-bool embedded(int target, set<int> &emr, const map<int,bool> &crit,
-			  const map<int,map<int,pair<int,double>>> &rtos, 
-			  const map<int,map<int,pair<int,double>>> &stor)
-{
-	bool found_all = true;
-	for(const auto &i:stor.at(target))
-	{
-		bool found_none = true;
-		bool r_o_p = rtos.at(i.first).at(target).first%2;
-		for(const auto &j:rtos.at(i.first))
-		{
-			if(j.second.first%2!=r_o_p && !crit.at(j.first))
-			{
-				emr.insert(i.first);
-				found_none = false; 
-				break;
-			}
-		}
-		if(found_none) found_all = false;
-	}
-	return found_all;
-}
-
 int find_LM (int target, set<int> &unnasr, set<int> &unnass,
 			  pair<set<int>,set<int>> &BM,
 			  const map<int,bool> &r_cons, 
@@ -163,14 +67,14 @@ int find_LM (int target, set<int> &unnasr, set<int> &unnass,
 			  const map<int,map<int,pair<int,double>>> &rtos, 
 			  const map<int,map<int,pair<int,double>>> &stor)
 {
-	if(!s_cons.at(target) && unnass.find(target)!=unnass.end()) // if not already added to a BM and dead
+	if(s_cons.at(target) && unnass.find(target)!=unnass.end()) // if not already added to a BM and dead
 	{
 		unnass.erase(target);
 		BM.second.insert(target);
 		int count = 1;
 		for(const auto &i:stor.at(target)) // iterate over surrounding reacs 
 		{
-			if(!r_cons.at(i.first) && unnasr.find(i.first)!=unnasr.end()) // if not already a part of a BM and dead 
+			if(r_cons.at(i.first) && unnasr.find(i.first)!=unnasr.end()) // if not already a part of a BM and dead 
 			{
 				unnasr.erase(i.first);
 				BM.first.insert(i.first);
@@ -446,6 +350,9 @@ void Explorer::update_blocked(bool full)
 
 						tot_heur_time += al_get_time() - heur_time;
 
+						bool did_expansion_already = false;
+						map<int,PCC> origPCCs;
+
 						if(nstor.size()!=0 && nrtos.size()!=0)
 						{
 							opt_time = al_get_time();
@@ -460,6 +367,61 @@ void Explorer::update_blocked(bool full)
 							er_time = al_get_time();
 							if(bidir_count==0 && dead_count>0)
 							{
+
+								// Add the inconsistencies found in the FBA_find_incons round on the reduced system
+								for(const auto &i:fast_results_FBA) if(!i.second) PCCs.at(i.first).addIncon(-1,PCC::sto);
+
+								/// Perform an error expansion ///////
+
+								heur_time = al_get_time();
+
+								// Now transfer these inconsistencies to the original PCCs, in order to find the actually dead reactions
+								incon_reacs = get_incon_reacs(PCCs,final_revival,incs);
+								// First recreate the original PCCs
+								it = 0;
+								for(const auto &i:rtos) 
+								{ 
+									int temp = i.first;
+									origPCCs.emplace(it,PCC(temp,rev.at(temp))); 
+									it++;
+								}
+								// Now transfer the inconsistencies from the reduced array to the original
+								for(const auto &i:incon_reacs) origPCCs.at(i.first).addIncons(i.second);
+								// Now perform an inconsistency spreading (that does not purge PCCs)
+								map<int,map<int,pair<int,double>>> N_STOR = stor;
+								map<int,map<int,pair<int,double>>> N_RTOS = rtos;
+								final_revival.clear();
+								spread_inconsistencies(origPCCs,final_revival,N_RTOS,N_STOR,verbose);
+								// Get the inconsistent reactions with their inconsistency lists
+								incon_reacs = get_incon_reacs(origPCCs,final_revival,incs);
+
+								did_expansion_already=true;
+								tot_heur_time += al_get_time() - heur_time;
+
+
+								// Now the Blocked Module finding algorithm needs stor and rtos cleared of all dead reaction except the cyclic ones
+								// As well as a list of all reactions excluding the non-cyclic dead, with the cyclic dead marked as dead
+								map<int,bool> expanded_results_FBA;
+								for(const auto &i:rtos) expanded_results_FBA.emplace(i.first,true);
+								for(const auto &i:incon_reacs) 
+								{
+									if(i.second.find(-1)!=i.second.end()) expanded_results_FBA.at(i.first) = false; // if cyclic dead
+									else expanded_results_FBA.erase(i.first); // erase if other kind of dead
+								}
+
+								nrtos = rtos;
+								nstor.clear();
+								for(const auto &i:incon_reacs) if(i.second.find(-1)==i.second.end()) nrtos.erase(i.first);
+								for(const auto &i:nrtos)
+								{
+									for(const auto &j:i.second)
+									{
+										nstor[j.first][i.first] = j.second;
+									}
+								}
+
+								// /////////////////////////////////////// //
+
 								// Find all Blocked Modules
 								// First find dead specs (iff all reactions around are dead)
 								map<int,bool> spec_consistent;
@@ -467,14 +429,14 @@ void Explorer::update_blocked(bool full)
 								{
 									// test if the spec has only dead neighbours
 									bool all_dead = true;
-									for(const auto &j:i.second) if(fast_results_FBA.at(j.first)) { all_dead = false ; break; }
+									for(const auto &j:i.second) if(expanded_results_FBA.at(j.first)) { all_dead = false ; break; }
 									if(all_dead) spec_consistent.emplace(i.first,false);
 									else spec_consistent.emplace(i.first,true);
 								}
 
 								set<int> unnas_reacs; // dead reactions to be assigned to blocked modules
 								set<int> unnas_specs; // dead species to be assigned to blocked modules
-								for(const auto &i:fast_results_FBA) if(!i.second) unnas_reacs.insert(i.first);
+								for(const auto &i:expanded_results_FBA) if(!i.second) unnas_reacs.insert(i.first);
 								for(const auto &i:spec_consistent) if(!i.second) unnas_specs.insert(i.first);
 								// recursive function for finding BMs
 
@@ -483,7 +445,7 @@ void Explorer::update_blocked(bool full)
 									bm_count--;
 									bms[bm_count];
 									BMs[bm_count]; // initialize but do not fill the container
-									int count = find_BM(*unnas_reacs.begin(),unnas_reacs,unnas_specs,bms.at(bm_count),fast_results_FBA,spec_consistent,nrtos,nstor);
+									int count = find_BM(*unnas_reacs.begin(),unnas_reacs,unnas_specs,bms.at(bm_count),expanded_results_FBA,spec_consistent,nrtos,nstor);
 									if(verbose) printf("Found BM %i big - (r:%i,s:%i)!\n",count,(int)bms.at(bm_count).first.size(),(int)bms.at(bm_count).second.size());
 								}
 
@@ -507,17 +469,37 @@ void Explorer::update_blocked(bool full)
 								if(verbose) printf("\nThe numbers of peripheral species in each BM are:\n");
 								if(verbose) for(const auto &i:per_specs) printf("%i\n",(int)i.second.size());
 
-								// Remove the blocked reactions, giving them the order numbers of the BMs 
+								// Give them the order numbers of the BMs 
 								for(const auto &i:bms)
 								{
 									for(const auto &j:i.second.first)
 									{
-										PCCs.at(j).addIncon(i.first,PCC::sto);
+										origPCCs.at(j).remIncon(-1); // remove the non-divided inconsistency from the PCC
+										origPCCs.at(j).addIncon(i.first,PCC::sto);
 									}
 								}
-								new_strtos(PCCs,nstor,nrtos);
+
+								incon_reacs = get_incon_reacs(origPCCs,final_revival,incs);
 
 								// Test the cleared network with sinks and sources
+								// Make a new nstor and nrtos, with real reaction indices, but cleared of inconsistent reactions
+								nrtos.clear();
+								nstor.clear();
+								for(const auto &i:rtos) 
+								{
+									if(incon_reacs.find(i.first)==incon_reacs.end()) 
+									{
+										nrtos.emplace(i.first,i.second);
+									}
+								}
+								for(const auto &i:nrtos)
+								{
+									for(const auto &j:i.second)
+									{
+										nstor[j.first][i.first] = j.second;
+									}
+								}
+
 								int numcd = 0;
 								int numpd = 0;
 								map<int,bool> CONS;
@@ -526,19 +508,20 @@ void Explorer::update_blocked(bool full)
 								PROD = SINKS_find_incons(nrtos,nstor,1.0,numpd);
 								CONS = SINKS_find_incons(nrtos,nstor,-1.0,numcd);
 
+								// Divide the sink-inconsistent species into groups depending on whether they are sink or source inconsistent (or both)
 								map<int,bool> only_cons;
 								map<int,bool> only_prod;
 								map<int,bool> prod_cons;
 								for(const auto &i:nstor)
 								{
-									only_cons.emplace(i.first,true); 
-									only_prod.emplace(i.first,true);
-									prod_cons.emplace(i.first,true);
+									only_cons.emplace(i.first,false); 
+									only_prod.emplace(i.first,false);
+									prod_cons.emplace(i.first,false);
 									int co = !CONS.at(i.first);
 									int pr = !PROD.at(i.first);
-									if(co && !pr) only_cons.at(i.first)=false;
-									else if(pr && !co) only_prod.at(i.first)=false;
-									else if(pr && co) prod_cons.at(i.first)=false;
+									if(co && !pr) only_cons.at(i.first)=true;
+									else if(pr && !co) only_prod.at(i.first)=true;
+									else if(pr && co) prod_cons.at(i.first)=true;
 								}
 
 								// Find spec and reac groups according to si-so status
@@ -550,9 +533,9 @@ void Explorer::update_blocked(bool full)
 								set<int> sisor;
 								for(const auto &i:nstor)
 								{
-									if(!only_cons.at(i.first) && embedded(i.first,sir,only_cons,nrtos,nstor)) sis.insert(i.first);
-									else if(!only_prod.at(i.first) && embedded(i.first,sor,only_prod,nrtos,nstor)) sos.insert(i.first);
-									else if(!prod_cons.at(i.first) && embedded(i.first,sisor,prod_cons,nrtos,nstor)) sisos.insert(i.first);
+									if(only_cons.at(i.first)) { sis.insert(i.first); for(const auto &j:nstor.at(i.first)) sir.insert(j.first);}
+									else if(only_prod.at(i.first)) { sos.insert(i.first); for(const auto &j:nstor.at(i.first)) sor.insert(j.first);}
+									else if(prod_cons.at(i.first)) { sisos.insert(i.first); for(const auto &j:nstor.at(i.first)) sisor.insert(j.first);}
 								}
 								if(verbose) printf("\nThere are %i(%i)-si, %i(%i)-so and %i(%i)-siso specs(reacs)!\n",(int)sis.size(),(int)sir.size(),
 																		(int)sos.size(),(int)sor.size(),(int)sisos.size(),(int)sisor.size());
@@ -561,9 +544,9 @@ void Explorer::update_blocked(bool full)
 								map<int,bool> only_consR;
 								map<int,bool> only_prodR;
 								map<int,bool> prod_consR;
-								for(const auto &i:nrtos) only_consR.emplace(i.first,(sir.find(i.first)==sir.end()));
-								for(const auto &i:nrtos) only_prodR.emplace(i.first,(sor.find(i.first)==sor.end()));
-								for(const auto &i:nrtos) prod_consR.emplace(i.first,(sisor.find(i.first)==sisor.end()));
+								for(const auto &i:nrtos) only_consR.emplace(i.first,(sir.find(i.first)!=sir.end()));
+								for(const auto &i:nrtos) only_prodR.emplace(i.first,(sor.find(i.first)!=sor.end()));
+								for(const auto &i:nrtos) prod_consR.emplace(i.first,(sisor.find(i.first)!=sisor.end()));
 
 								// Divide every si-so set into living modules (LMs) 
 								// The rules are that every spec in every LM must have >0 consuming and >0 producing reactions 
@@ -595,91 +578,12 @@ void Explorer::update_blocked(bool full)
 									if(verbose) printf("Found LM %i big - (r:%i,s:%i) - type: siso!\n",count,(int)lms.at(lm_count).first.size(),(int)lms.at(lm_count).second.size());
 								}
 
-								// Use PCCs to convert the LMs to actual reactions (populate LMs)
-								int coo = 1;
+								// Reindex the lms to make the LMs
 								for(const auto &i:lms)
 								{
-									set<int> new_reacs;
-									for(const auto &j:i.second.first) for(const auto &k:PCCs.at(j).reacs) new_reacs.insert(k.first);
-									set<int> new_specs;
-									new_specs = i.second.second;
-
-									// Now we need to clean the new reacs from imports and exports, which are obviously not a part of the loop
-									// make a temporary rtos and stor
-									map<int,map<int,pair<int,double>>> temp_rtos;
-									map<int,map<int,pair<int,double>>> temp_stor;
-									for(const auto &j:new_reacs) temp_rtos.emplace(j,rtos.at(j));
-									for(const auto &j:temp_rtos) {for(const auto &k:j.second) {temp_stor[k.first][j.first] = k.second;}}
-
-									// clean out external connections (dead end specs)
-									set<int> sdelete;
-									for(const auto &i:temp_stor)
-									{
-										int forw = 0;
-										int backw = 0;
-										int bidir = 0;
-										for(const auto &j:i.second) 
-										{
-											if(j.second.first>1) bidir++;
-											else if(j.second.first%2==0) forw++;
-											else backw++;
-										}
-										if(((forw==0 || backw==0) && bidir==0) || (forw==0 && backw==0 && bidir==1))
-										{
-											sdelete.insert(i.first);
-											for(const auto &j:i.second) temp_rtos.at(j.first).erase(i.first);
-										}
-									}
-									for(const auto &i:sdelete) temp_stor.erase(i);
-									set<int> rdelete;
-									for(const auto &i:temp_rtos) if(i.second.size()==0) rdelete.insert(i.first);
-									for(const auto &i:rdelete) temp_rtos.erase(i); 
-
-									// Clean out anything exported/imported
-									set<int> alive_reacs;
-									set<int> alive_specs;
-									for(const auto &j:temp_rtos) 
-									{
-										int numrs = 0;
-										int numps = 0;
-										for(const auto &k:j.second) {if(k.second.first%2==0) numrs++; else numps++;}
-										if(numrs==0 || numps==0) { alive_reacs.insert(j.first); alive_specs.insert(j.second.begin()->first); }
-									}
-
-									int new_hits;
-									do
-									{
-										new_hits = 0;
-										for(auto &j:temp_rtos) 
-										{
-											if(alive_reacs.find(j.first)==alive_reacs.end())
-											{
-												bool all_rs_in = true;
-												bool all_ps_in = true;
-												for(auto &k:j.second) 
-												{
-													if(k.second.first%2==0 && alive_specs.find(k.first)==alive_specs.end()) all_rs_in = false;
-													if(k.second.first%2==1 && alive_specs.find(k.first)==alive_specs.end()) all_ps_in = false;
-												}
-												if(all_rs_in || all_ps_in) 
-												{
-													alive_reacs.insert(j.first);
-													for(auto &k:j.second) alive_specs.insert(k.first);
-													new_hits++;
-												} 
-											}
-										}
-
-									} while(new_hits>0);
-
-									for(const auto &j:alive_reacs) for(const auto &k:temp_rtos.at(j)) temp_stor.at(k.first).erase(j);
-									for(const auto &j:alive_specs) for(const auto &k:temp_stor.at(j)) temp_rtos.at(k.first).erase(j);
-									for(const auto &j:alive_reacs) temp_rtos.erase(j);
-									for(const auto &j:alive_specs) temp_stor.erase(j);
-
 									set<int> one; set<int> two;
-									for(const auto &i:temp_rtos) one.insert(s.reaclinks[i.first]);
-									for(const auto &i:temp_stor) two.insert(s.speclinks[i.first]);
+									for(const auto &j:i.second.first) one.insert(s.reaclinks[j]);
+									for(const auto &j:i.second.second) two.insert(s.speclinks[j]);
 
 									LMs.emplace(i.first,make_pair(one,two));
 								}
@@ -726,36 +630,36 @@ void Explorer::update_blocked(bool full)
 							tot_erfind_time += al_get_time()-er_time;
 						}
 
-						heur_time = al_get_time();
+						if(!did_expansion_already)
+						{
+							heur_time = al_get_time();
+							// Now transfer these inconsistencies to the original PCCs, in order to find the actually dead reactions
+							incon_reacs = get_incon_reacs(PCCs,final_revival,incs);
+							// First recreate the original PCCs
+							it = 0;
+							for(const auto &i:rtos) 
+							{ 
+								int temp = i.first;
+								origPCCs.emplace(it,PCC(temp,rev.at(temp))); 
+								it++;
+							}
+							// Now transfer the inconsistencies from the reduced array to the original
+							for(const auto &i:incon_reacs) origPCCs.at(i.first).addIncons(i.second);
+							// Now perform an inconsistency spreading (that does not fuse PCCs)
+							map<int,map<int,pair<int,double>>> N_STOR = stor;
+							map<int,map<int,pair<int,double>>> N_RTOS = rtos;
+							final_revival.clear();
+							spread_inconsistencies(origPCCs,final_revival,N_RTOS,N_STOR,verbose);
+							// Get the inconsistent reactions 
+							incon_reacs = get_incon_reacs(origPCCs,final_revival,incs);
 
-						// Now transfer these inconsistencies to the original PCCs, in order to find the actually dead reactions
-						incon_reacs = get_incon_reacs(PCCs,final_revival,incs);
-
-						// First recreate the original PCCs
-						it = 0;
-						map<int,PCC> origPCCs;
-						for(const auto &i:rtos) 
-						{ 
-							int temp = i.first;
-							origPCCs.emplace(it,PCC(temp,rev.at(temp))); 
-							it++;
+							tot_heur_time += al_get_time() - heur_time;
 						}
-
-						// Now transfer the inconsistencies from the reduced array to the original
-						for(const auto &i:incon_reacs) origPCCs.at(i.first).addIncons(i.second);
-						// Now perform an inconsistency spreading (that does not fuse PCCs)
-						nstor = stor;
-						nrtos = rtos;
-						final_revival.clear();
-						spread_inconsistencies(origPCCs,final_revival,nrtos,nstor,verbose);
-						// Get the inconsistent reactions 
-						incon_reacs = get_incon_reacs(origPCCs,final_revival,incs);
-
-						tot_heur_time += al_get_time() - heur_time;
 
 						arrays_upd_after_ccheck = 0;
 
 						er_time = al_get_time();
+							
 
 						if(bidir_count==0) // If FBA, and inconsistencies were found, do the error grouping stuff
 						{
@@ -961,7 +865,9 @@ void Explorer::update_blocked(bool full)
 
 			int co = 0;
 			for (bool i : SINK_dead) if (i) co++;
-			printf(A_YEL "%i reactions found blocked by the Dynamic method!\n" A_RES, co);
+			int cos = 0;
+			for (bool i : SINK_dead_specs) if(i) cos++;
+			printf(A_YEL "%i reactions and %i species found blocked by the Dynamic method!\n" A_RES, co, cos);
 			if(print_times) printf("The dynamic algorithm took %f sec.\n",sink_time);
 		}
 

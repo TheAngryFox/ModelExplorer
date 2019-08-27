@@ -144,11 +144,11 @@ public:
     enum search_pos {AT_END,ANYWHERE};
 private:
     /// Used for saving changes after reaction/species/compartment addition or removal 
-    enum action {ADDED,REMOVED,CHANGED};
+    enum action {ADDED,REMOVED,CHANGED,NAN_ACTION};
     struct Save 
     {
         int num;
-        action a;
+        action a = NAN_ACTION;
         map<string,compartment> c;
         map<string,specium> s;
         map<string,reaction> r;
@@ -169,8 +169,8 @@ public:
     FBA_model () {};
     FBA_model (string file) {load(file);}
     ~FBA_model() {}
-    int purge_reactions (const vector<string> &rem_reacs, bool truncate = true);
-    int purge_species(const vector<string> &rem_specs, bool truncate = true);
+    int purge_reactions (const vector<string> &rem_reacs, bool truncate = true, bool add_to_previous=false);
+    int purge_species(const vector<string> &rem_specs, bool truncate = true, bool add_to_previous=false);
 	int purge_species_weak(const vector<string> &rem_specs, bool truncate = true);
     int purge_disconnected_species(bool truncate = true);
     vector<string> find_species_by_tag(string tag, int pos);
@@ -179,6 +179,7 @@ public:
     int purge_species_by_compartment(string name, bool truncate = true);
     int purge_disconnected_reactions(bool truncate = true);
     int purge_disconnected_clusters(bool truncate = true);
+	int purge_dead(int dead_type, bool truncate = true);
 	bool add_species(string old_id, string id, const specium &s);
 	bool add_reaction(string old_id, string id, const reaction &r);
 	bool add_compartment(string old_id, string id, const compartment &c);

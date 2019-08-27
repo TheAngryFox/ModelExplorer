@@ -2380,6 +2380,7 @@ response_type Custom::respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt,do
             else return response_type::cust_move_mouse;
         }
         else if (evt == event_type::scroll) return response_type::zoom;
+		else if(input.first=='\t') return response_type::tab_key;
     }
     return response_type::do_nothing;
 }

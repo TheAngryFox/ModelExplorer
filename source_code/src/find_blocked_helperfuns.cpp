@@ -41,6 +41,7 @@ void PCC::set_rtos(map<int,map<int,pair<int,double>>> &r) { rtos = r; };
 map<int,map<int,pair<int,double>>> PCC::get_stor() {return stor;};
 map<int,map<int,pair<int,double>>> PCC::get_rtos() {return rtos;};
 void PCC::addIncon(int s, incons i) { inc.emplace(s,i); };
+void PCC::remIncon(int s) { inc.erase(s); };
 void PCC::addIncons(map<int,incons> i) { inc.insert(i.begin(),i.end()); };
 bool PCC::isConsistent() const { return (inc.empty()) ? true : false; };
 bool PCC::getFlux(int s, double &val, bool &rev) const // get the flux value of the PCC into a species s and whether it is reversible
@@ -120,7 +121,7 @@ bool PCC::fuse(pair<PCC*,pinfo> p1, pair<PCC*,pinfo> p2, map<int,PCC> &PCCs, map
 		nrtos.erase(fusion.second);
 
 		// Change the info about the expanded PCC
-		// First remove mentiones of it in nstor
+		// First remove mentions of it in nstor
 		for(const auto &j:nrtos.at(fusion.first)) nstor.at(j.first).erase(fusion.first);
 		nrtos.erase(fusion.first);
 		// Now recreate its nrtos element
@@ -339,7 +340,7 @@ bool PCC::add(const int s, map<int,PCC> &PCCs, map<int,map<int,pair<int,double>>
 			fuse(unfrp[0],unfrp[1],PCCs,nrtos,nstor);
 			return true;
 		}
-		else if (plus_fixed==(unfrp.size()-1) || minus_fixed==(unfrp.size()-1)) 
+		else if (plus_fixed==(unfrp.size()-1) || minus_fixed==(unfrp.size()-1)) // Reversiblity diffusion
 		{
 			// If all but one reaction point into or out of the species and are irreversible, 
 			// then if the remaining reaction is reversible, it should get the opposite direction and become irreversible
@@ -362,7 +363,7 @@ bool PCC::add(const int s, map<int,PCC> &PCCs, map<int,map<int,pair<int,double>>
 		}
  		else
 		{
-			// Now if no other case is appliccable , test if we can impex - simplify this species
+			// Now if no other case is appliccable, test if we can impex - simplify this species
 			// This means we first test if there are import/export reactions around this species 
 			// If there are, we simplify (or not, in certain cases) the other reactions around, and remove the import/export one
 
@@ -390,7 +391,7 @@ bool PCC::add(const int s, map<int,PCC> &PCCs, map<int,map<int,pair<int,double>>
 				set<int> revived = fuse_degenerate(PCCs,impexes,s,nrtos,nstor);
 				final_revival.insert(revived.begin(),revived.end());
 
-				// Now consider whether the resulting impex 
+				// Now consider whether the resulting impex is reversible or not
 				int imp = *impexes.begin();
 				double val; bool rev;
 				bool unidir = PCCs.at(imp).getFlux(s,val,rev);
@@ -400,7 +401,6 @@ bool PCC::add(const int s, map<int,PCC> &PCCs, map<int,map<int,pair<int,double>>
 
 				if(all_opposite) // if reversible, unconditionally reduce this PCC, otherwise check if all are opposite
 				{
-
 					// Destroy the current species in nstor and all mentions of it in nrtos and in specs_to_reacs of all PCCs
 					for(const auto &i:nstor.at(s))
 					{

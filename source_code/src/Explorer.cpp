@@ -96,6 +96,7 @@ Explorer::Explorer(string filename, const set<string> &flags, double res_X, doub
 	buttons.back().menu.push_back(button_template<Explorer>(button_type::menu_click, &Explorer::purge, this, "Disconneced species", 2));
 	buttons.back().menu.push_back(button_template<Explorer>(button_type::menu_click, &Explorer::purge, this, "Disconneced reactions", 3));
 	buttons.back().menu.push_back(button_template<Explorer>(button_type::menu_click, &Explorer::purge, this, "Disconneced clusters", 4));
+	buttons.back().menu.push_back(button_template<Explorer>(button_type::menu_click, &Explorer::purge, this, "Blocked reactions and species", 6));
 
 	/// Dead reactions search
 	buttons.push_back(button_template<Explorer>(button_type::principal_menu_root, "Reaction status"));
@@ -446,16 +447,16 @@ int Explorer::run()
         {
             redraw = true;
             if(ev.keyboard.keycode==ALLEGRO_KEY_ESCAPE) {/*break;*/}
-			else if (ev.keyboard.modifiers == ALLEGRO_KEYMOD_SHIFT && ev.keyboard.keycode == ALLEGRO_KEY_DELETE) purge_selection_weak();
+			else if ((ev.keyboard.modifiers & ALLEGRO_KEYMOD_SHIFT) && ev.keyboard.keycode == ALLEGRO_KEY_DELETE) purge_selection_weak();
 			else if (ev.keyboard.keycode == ALLEGRO_KEY_DELETE) purge_selection();
-			else if (ev.keyboard.modifiers == ALLEGRO_KEYMOD_CTRL && ev.keyboard.unichar == 'z')
+			else if ((ev.keyboard.modifiers & ALLEGRO_KEYMOD_CTRL) && ev.keyboard.keycode == ALLEGRO_KEY_Z)
 			{
 				model->undo();
 				update_arrays();
 				scr_upd = true;
 				update_compartments();
 			}
-			else if (ev.keyboard.modifiers == ALLEGRO_KEYMOD_CTRL && ev.keyboard.unichar == 'y')
+			else if ((ev.keyboard.modifiers & ALLEGRO_KEYMOD_CTRL) && ev.keyboard.keycode == ALLEGRO_KEY_Y)
 			{
 				model->redo();
 				update_arrays();
@@ -465,8 +466,8 @@ int Explorer::run()
             else
             {
 				char mod = 'n';
-				if (ev.keyboard.modifiers == ALLEGRO_KEYMOD_CTRL) mod = 'c';
-				else if (ev.keyboard.modifiers == ALLEGRO_KEYMOD_SHIFT) mod = 's';
+				if (ev.keyboard.modifiers & ALLEGRO_KEYMOD_CTRL) mod = 'c';
+				else if(ev.keyboard.modifiers & ALLEGRO_KEYMOD_SHIFT) mod = 's';
                 events.push(event_type::keyboard);
                 key_inps.push(pair<char,char>(ev.keyboard.unichar,mod));
             }
@@ -489,7 +490,7 @@ int Explorer::run()
                 events.pop();
                 ///respond
                 react_to_response(response);
-                if(response==response_type::cust_move_mouse) got_any_cust_move_mouse=true;
+                if(response==response_type::cust_move_mouse || response==response_type::tab_key) got_any_cust_move_mouse=true;
 				if(response==response_type::hor_area_resize
 				   || response==response_type::ver_area_resize) got_resize=true;
             }
@@ -642,6 +643,30 @@ int Explorer::react_to_response(response_type res)
     }
     else if(res==response_type::ver_area_resize_hov) cursor=ver_resize;
     else if(res==response_type::hor_area_resize_hov) cursor=hor_resize;
+	else if(res==response_type::tab_key)
+	{
+		if(T_MODE==ancestral)
+		{
+			tree_type = 1 - tree_type;
+			if(frozen_tree_centre!=-1)
+			{
+				if(tree_type==0) make_ancestry_tree(parents,frozen_tree,reactants,products,reversible,dead,frozen_tree_centre,sumreac,1e6);
+				else if(tree_type==1) make_ancestry_tree(children,frozen_tree,products,reactants,reversible,dead_out,frozen_tree_centre,sumreac,1e6);
+				draw_spec_relatives(frozen_tree_centre,true);
+			}
+			else
+			{
+				
+         		int hit = -1;
+				if(hit_node(hit)) 
+				{
+					draw_spec_relatives(hit,true);
+					prev_hit=hit;
+				} 
+			}
+			
+		}
+	}
     return 0;
 }
 
@@ -721,12 +746,12 @@ void Explorer::draw_information(bool got_any_cust_move_mouse)
 
 void Explorer::draw_spec_relatives(int hit, bool draw_legend_or_line)
 {
+	if(T_MODE!=non_curious && win->get_mode()!=Window<Explorer>::neighbour_info && !editing_entity) win->set_mode(Window<Explorer>::neighbour_info);
     if(hit==-1) // if does not hover over anything of importance
     {
         vector<string> info;
         win->Change_text(info);
-		if(win->get_mode() != Window<Explorer>::neighbour_info && win->get_mode() != Window<Explorer>::add_compart && 
-			win->get_mode() != Window<Explorer>::add_reac && win->get_mode() != Window<Explorer>::add_spec && freeze == -1) win->set_mode(Window<Explorer>::neighbour_info);
+		if(!editing_entity && win->get_mode()!=Window<Explorer>::neighbour_info && freeze == -1) win->set_mode(Window<Explorer>::neighbour_info);
     }
 	else if (hit < -1 && T_MODE==non_curious) // if hovers over compartment
 	{
@@ -939,7 +964,8 @@ void Explorer::draw_spec_relatives(int hit, bool draw_legend_or_line)
             Array<ancestor> tree; 
             if(hit!=freeze || (hit==freeze && frozen_tree_centre!=hit))
             {
-                make_ancestry_tree(parents,tree,reactants,products,reversible,dead,hit,sumreac,1e6);
+                if(tree_type==0) make_ancestry_tree(parents,tree,reactants,products,reversible,dead,hit,sumreac,1e6);
+				else if(tree_type==1) make_ancestry_tree(children,tree,products,reactants,reversible,dead_out,hit,sumreac,1e6);
 			}
             else if(hit==freeze && !frozen_tree.empty())
             {
@@ -952,7 +978,7 @@ void Explorer::draw_spec_relatives(int hit, bool draw_legend_or_line)
             if(!draw_legend_or_line)
             {
                 /// Draw the ancestors of the species
-                COL line_col = (dead[hit]) ? bold_line_c : liv_bold_line_c;
+                COL line_col = (tree_type==0 ? dead[hit] : dead_out[hit]) ? bold_line_c : liv_bold_line_c;
                 for(auto& q:tree) for(ancestor& i:q)
                 {
                     if(!i.killed)
@@ -1017,10 +1043,10 @@ void Explorer::draw_spec_relatives(int hit, bool draw_legend_or_line)
                     if(found)
                     {
                         string generation;
-                        if(i==1) generation = "Parents";
-                        else if(i==2) generation = "Grandparents";
-                        else if(i==3) generation = "Great-grandparents";
-                        else generation = "Great-" + to_string((int)i-2) + "-grandparents";
+                        if(i==1) generation = (tree_type==0) ? "Parents" : "Children";
+                        else if(i==2) generation = (tree_type==0) ? "Grandparents" : "Grandchildren";
+                        else if(i==3) generation = (tree_type==0) ? "Great-grandparents" : "Great-grandchildren";
+                        else generation = "Great-" + to_string((int)i-2) + ((tree_type==0) ? "-grandparents" : "-grandchildren");
 
                         info.push_back("$r" + generation + ":");
                         info.push_back("\t");
@@ -1181,7 +1207,7 @@ void Explorer::draw_spec_relatives(int hit, bool draw_legend_or_line)
 						ereac_frozen = -1;
 						espec_frozen = -1;
 						espec_group.clear();
-						freeze = -1;
+						//freeze = -1;
 					}
 				}
 				else if(freeze>=sumreac) 
@@ -1197,7 +1223,7 @@ void Explorer::draw_spec_relatives(int hit, bool draw_legend_or_line)
 						ereac_frozen = -1;
 						espec_frozen = -1;
 						espec_group.clear();
-						freeze = -1;
+						//freeze = -1;
 					}
 					 
 				}
@@ -1396,7 +1422,6 @@ void Explorer::draw_spec_relatives(int hit, bool draw_legend_or_line)
 			{
 				if(BMLM_info.size()==0) // draw reaction - causing specs info
 				{
-					
 					win->Change_text(reac_info);
 				}
 				else // draw bm / lm info
@@ -2378,7 +2403,7 @@ SVG Explorer::draw_to_SVG(double x_res, double y_res)
 			Array<ancestor> tree = frozen_tree;
 
 			/// Draw the ancestors of the species
-			COL line_col = (dead[freeze]) ? bold_line_c : liv_bold_line_c;
+			COL line_col = (tree_type==0 ? dead[freeze] : dead_out[freeze]) ? bold_line_c : liv_bold_line_c;
 			for (auto& q : tree) for (ancestor& i : q)
 			{
 				if (!i.killed)
@@ -2690,10 +2715,12 @@ void Explorer::update_arrays()
     links.clear();
 	neighbours.clear();
     parents.clear();
+	children.clear();
     reactants.clear();
     products.clear();
     reversible.clear();
     dead.clear();
+	dead_out.clear();
     objectives.clear();
     index_to_id.clear();
 	index_to_id_full.clear();
@@ -2704,6 +2731,8 @@ void Explorer::update_arrays()
     o_reactants_of.clear();
     reac_order.clear();
     spec_order.clear();
+    reac_order_out.clear();
+    spec_order_out.clear();
     coors.clear();
 
     /// Update the deadness of each species using the data stored in the model
@@ -2815,12 +2844,18 @@ void Explorer::update_arrays()
     /// Find neighbours of each species/reaction and parents of each species/reaction
 	neighbours.resize(sumtot);
     parents.resize(sumtot);
+	children.resize(sumtot);
     for(auto &i:links)
     {
 		neighbours[i[0]].push_back(i[1]);
 		neighbours[i[1]].push_back(i[0]);
         parents[i[1]].push_back(i[0]);
-        if(i[2]) parents[i[0]].push_back(i[1]);
+		children[i[0]].push_back(i[1]);
+        if(i[2]) // if reversible
+		{
+			parents[i[0]].push_back(i[1]); 
+			children[i[1]].push_back(i[0]);
+		}
     }
 
     /// Find molecules that are not products of any reaction
@@ -2837,7 +2872,11 @@ void Explorer::update_arrays()
 
     /// Find the inflows
     vector<int> infl;
-    for(int i=0;i<sumreac;i++) if(reactants[i].size()==0 && products[i].size()>0) infl.push_back(i);
+    for(int i=0;i<sumreac;i++) if((reactants[i].size()==0 && products[i].size()>0) || (reactants[i].size()>0 && products[i].size()==0 && reversible[i])) infl.push_back(i);
+
+	/// Find the outflows
+	vector<int> outf;
+	for(int i=0;i<sumreac;i++) if((reactants[i].size()>0 && products[i].size()==0) || (reactants[i].size()==0 && products[i].size()>0 && reversible[i])) infl.push_back(i);
 
     /// Find the objectives
     for(const auto &i:model->reactions) if(!i.second.ismasked() && i.second.obj_coeff!=0) objectives.push_back(r_id_to_index.at(i.first));
@@ -2854,6 +2893,7 @@ void Explorer::update_arrays()
     {
         reac_order[i]=1;
         for(const int &j:products[i]) spec_order[j-sumreac]=1;
+		for(const int &j:reactants[i]) if(reversible[i]) spec_order[j-sumreac]=1;
     }
 
     bool f_n_reac;
@@ -2893,6 +2933,57 @@ void Explorer::update_arrays()
     dead.resize(sumtot);
     for(int i=0;i<sumreac;i++) dead[i]=(reac_order[i]==-1) ? true : false;
     for(int i=0;i<sumspec;i++) dead[i+sumreac]=(spec_order[i]==-1);
+
+	/// Find molecules that can be directly excreted from the outflows
+
+    reac_order_out.resize(sumreac);     /// reaction distance to outflow
+    fill(reac_order_out.begin(),reac_order_out.end(),-1);
+    spec_order_out.resize(sumspec);       /// species distance to outflow
+    fill(spec_order_out.begin(),spec_order_out.end(),-1);
+
+    for(int i:outf)
+    {
+        reac_order_out[i]=1;
+        for(const int &j:reactants[i]) spec_order_out[j-sumreac]=1;
+		for(const int &j:products[i]) if(reversible[i]) spec_order_out[j-sumreac]=1;
+    }
+
+    c_ord = 1;
+    do
+    {
+        f_n_reac = false;
+        for(int i=0;i<sumreac;i++)
+        {
+            if(reac_order_out[i]==-1)
+            {
+                bool all_present = true;
+                if(reversible[i])
+                {
+                    bool first_present = true;
+                    bool second_present = true;
+                    for(const int &j:products[i]) if(spec_order_out[j-sumreac]==-1) first_present=false;
+                    if(!first_present) for(const int &j:reactants[i]) if(spec_order_out[j-sumreac]==-1) second_present=false;
+                    if(!first_present && !second_present) all_present=false;
+                }
+                else for(const int &j:products[i]) if(spec_order_out[j-sumreac]==-1) all_present=false;
+                if(all_present) {reac_order_out[i]=c_ord; f_n_reac=true;}
+            }
+        }
+        for(int i=0;i<sumreac;i++)
+        {
+            if(reac_order_out[i]==c_ord)
+            {
+                for(const int &j:reactants[i]) spec_order_out[j-sumreac]=c_ord;
+                if(reversible[i]) for(const int &j:products[i]) spec_order_out[j-sumreac]=c_ord;
+            }
+        }
+        c_ord++;
+    } while(f_n_reac);
+
+    /// Find species that cannot be directly derived from the inflows (for the ancestry searching)
+    dead_out.resize(sumtot);
+    for(int i=0;i<sumreac;i++) dead_out[i]=(reac_order_out[i]==-1) ? true : false;
+    for(int i=0;i<sumspec;i++) dead_out[i+sumreac]=(spec_order_out[i]==-1);
 
 	/// Find all the disconnected subgraphs in the model
 	vector<vector<int> > adjacency(sumtot);
@@ -3450,6 +3541,15 @@ void Explorer::purge(int n, string &s)
 		{
 			purge_selection();
 		}
+		else if (n==6) 
+		{
+			if(!B_MODE==none)
+			{
+				model->purge_dead(B_MODE==FBA ? 0 : B_MODE==bidir ? 1 : 2);
+				update_arrays();
+				scr_upd = true;
+			}
+		}
 		update_compartments();
 	}
 }
@@ -3524,6 +3624,8 @@ void Explorer::tracking(int n, string &s)
 	ereac_frozen = -1;
 	espec_group.clear();
 	espec_frozen = -1;
+
+	scr_upd = true;
 }
 
 void Explorer::blocking(int n, string &s)
@@ -3812,6 +3914,7 @@ void Explorer::edit_species(int n, string &s)
 						if (exists && trial!= index_to_id[edited_item]) s = "invalid"; // found the species to exist and not be the current species
 						else
 						{
+							editing_entity = true;
 							temp_id = trial;
 							s = "valid";
 						}
@@ -3821,6 +3924,7 @@ void Explorer::edit_species(int n, string &s)
 						if (exists) s = "invalid"; // found the species to exist 
 						else
 						{
+							editing_entity = true;
 							temp_id = trial;
 							s = "valid";
 						}
@@ -3840,6 +3944,7 @@ void Explorer::edit_species(int n, string &s)
 			}
 			else if (s[0] == '\b')
 			{
+				editing_entity = true;
 				string trial = s.substr(1, s.length() - 1);
 				temp_spec.name = trial;
 				s = "valid";
@@ -3857,6 +3962,7 @@ void Explorer::edit_species(int n, string &s)
 			}
 			else if (s[0] == '\b')
 			{
+				editing_entity = true;
 				string trial = s.substr(1, s.length() - 1);
 				temp_spec.formula = trial;
 				s = "valid";
@@ -3875,6 +3981,7 @@ void Explorer::edit_species(int n, string &s)
 			}
 			else if (s[0] == '\b')
 			{
+				editing_entity = true;
 				string trial = s.substr(1, s.length() - 1);
 				temp_spec.kegg = trial;
 				s = "valid";
@@ -3909,6 +4016,7 @@ void Explorer::edit_reaction(int n, string &s)
 						if (exists && trial != index_to_id[edited_item]) s = "invalid"; // found the reaction to exist and not be the current reactions
 						else
 						{
+							editing_entity = true;
 							temp_id = trial;
 							s = "valid";
 						}
@@ -3918,6 +4026,7 @@ void Explorer::edit_reaction(int n, string &s)
 						if (exists) s = "invalid"; // found the reactions to exist 
 						else
 						{
+							editing_entity = true;
 							temp_id = trial;
 							s = "valid";
 						}
@@ -3937,6 +4046,7 @@ void Explorer::edit_reaction(int n, string &s)
 			}
 			else if (s[0] == '\b')
 			{
+				editing_entity = true;
 				string trial = s.substr(1, s.length() - 1);
 				temp_reac.name = trial;
 				s = "valid";
@@ -3966,6 +4076,7 @@ void Explorer::edit_reaction(int n, string &s)
 				}
 				if (ok || trial.size()==0)
 				{
+					editing_entity = true;
 					s = "valid";
 					if (ok) temp_reac.up_bound = temp;
 				} 
@@ -3996,6 +4107,7 @@ void Explorer::edit_reaction(int n, string &s)
 				}
 				if (ok || trial.size() == 0)
 				{
+					editing_entity = true;
 					s = "valid";
 					if(ok) temp_reac.low_bound = temp;
 				}
@@ -4026,6 +4138,7 @@ void Explorer::edit_reaction(int n, string &s)
 				}
 				if (ok || trial.size() == 0)
 				{
+					editing_entity = true;
 					s = "valid";
 					if (ok) temp_reac.obj_coeff = temp;
 				}
@@ -4056,6 +4169,7 @@ void Explorer::edit_reaction(int n, string &s)
 				}
 				if (ok || trial.size() == 0)
 				{
+					editing_entity = true;
 					s = "valid";
 					if (ok) temp_reac.K_eq = temp;
 				}
@@ -4074,6 +4188,7 @@ void Explorer::edit_reaction(int n, string &s)
 			}
 			else if (s[0] == '\b')
 			{
+				editing_entity = true;
 				string trial = s.substr(1, s.length() - 1);
 				temp_reac.kegg = trial;
 				s = "valid";
@@ -4162,6 +4277,7 @@ void Explorer::edit_reactant_st(int n, string &s)
 		}
 		if (ok)
 		{
+			editing_entity = true;
 			s = "valid";
 			temp_reactants[n - 1].second = temp;
 		}
@@ -4249,6 +4365,7 @@ void Explorer::edit_product_st(int n, string &s)
 		}
 		if (ok)
 		{
+			editing_entity = true;
 			s = "valid";
 			temp_products[n - 1].second = temp;
 		}
@@ -4380,10 +4497,12 @@ void Explorer::edit_gene(int n, string &s)
 {
 	if (n > temp_genes.size())
 	{
+		editing_entity = true;
 		temp_genes.push_back("");
 	}
 	if (s == "\n")
 	{
+		editing_entity = true;
 		temp_genes.pop_back();
 	}
 	else if (s[0] == '\b')
@@ -4392,6 +4511,7 @@ void Explorer::edit_gene(int n, string &s)
 		s.clear();
 		if (trial.size() > 0)
 		{
+			editing_entity = true;
 			temp_genes[n - 1] = trial;
 			s = "valid";
 		}
@@ -4446,6 +4566,7 @@ void Explorer::edit_compart(int n, string &s)
 						if (exists && !eq_to_current) s = "invalid"; // found the compartment to exist and not be the current compartment
 						else
 						{
+							editing_entity = true;
 							temp_id = trial;
 							s = "valid";
 						}
@@ -4455,6 +4576,7 @@ void Explorer::edit_compart(int n, string &s)
 						if (exists) s = "invalid"; // found the compartment to exist 
 						else
 						{
+							editing_entity = true;
 							temp_id = trial;
 							s = "valid";
 						}
@@ -4485,17 +4607,18 @@ void Explorer::edit_compart(int n, string &s)
 
 void Explorer::edit_bound_cond(int n, vector<string> &s, int select, bool &new_text)
 {
-
 	if (select >= 0)
 	{
 		s.clear();
 		if (select == 0)
 		{
+			editing_entity = true;
 			temp_spec.boundary_condition = true;
 			s.push_back("true");
 		}
 		else if (select == 1)
 		{
+			editing_entity = true;
 			temp_spec.boundary_condition = false;
 			s.push_back("false");
 		}
@@ -4513,6 +4636,7 @@ void Explorer::edit_bound_cond(int n, vector<string> &s, int select, bool &new_t
 		if(win->get_mode() == Window<Explorer>::edit_spec) s.push_back(model->species.at(index_to_id[edited_item]).boundary_condition ? "true" : "false");
 		else
 		{
+			editing_entity = true;
 			s.push_back("false");
 			temp_spec.boundary_condition = false;
 		}
@@ -4527,11 +4651,13 @@ void Explorer::edit_reversibility(int n, vector<string> &s, int select, bool &ne
 		s.clear();
 		if (select == 0)
 		{
+			editing_entity = true;
 			temp_reac.reversible = true;
 			s.push_back("true");
 		}
 		else if (select == 1)
 		{
+			editing_entity = true;
 			temp_reac.reversible = false;
 			s.push_back("false");
 		}
@@ -4549,6 +4675,7 @@ void Explorer::edit_reversibility(int n, vector<string> &s, int select, bool &ne
 		if (win->get_mode() == Window<Explorer>::edit_reac) s.push_back(model->reactions.at(index_to_id[edited_item]).reversible ? "true" : "false");
 		else
 		{
+			editing_entity = true;
 			s.push_back("false");
 			temp_reac.reversible = false;
 		}
@@ -4562,10 +4689,12 @@ void Explorer::spec_reac_manipulate(int n, string &s)
 	{
 		string s;
 		add_or_edit(current_aoe_action, s);
+		editing_entity = false;
 	}
 	else if (n == 10) // cancel
 	{
 		win->set_mode(Window<Explorer>::neighbour_info);
+		editing_entity = false;
 	}
 	else if(win->apply_current_mode())
 	{
@@ -4661,6 +4790,7 @@ void Explorer::spec_reac_manipulate(int n, string &s)
 			model->add_compartment(curedit, temp_id, { temp_compart });
 			win->apply_current_mode();
 		}
+		editing_entity = false;
 		update_arrays();
 	}
 	else printf("\nCHANGE COULD NOT BE APPLIED - check for red fields!\n");
