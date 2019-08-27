@@ -64,7 +64,7 @@ All of the above commands also apply to the ErrorTracer executable, with the add
 
 ## Usage
 
-Please consult the user manual for a full description of the capabilites of the software.
+Please consult the user manual for a full description of the capabilites of the software. Videos demonstrating the capabilities of ModelExplorer are available on [YouTube](https://www.youtube.com/watch?v=xWNrZN6jeoA&list=PLYa7LEU4_U3daU7E6AZUrsLCGrruSUGJm&index=1). 
 
 ## Licence
 
