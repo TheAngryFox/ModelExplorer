@@ -167,7 +167,6 @@ Explorer::Explorer(string filename, const set<string> &flags, double res_X, doub
 	
 	b_temp.push_back(button_template<Explorer>(button_type::click, &Explorer::spec_reac_manipulate, this, "Save species", 1));
 	b_temp.push_back(button_template<Explorer>(button_type::click, &Explorer::spec_reac_manipulate, this, "Reset", 0));
-	b_temp.push_back(button_template<Explorer>(button_type::click, &Explorer::spec_reac_manipulate, this, "Cancel", 10));
 
 	order.resize(order.size() + 1);
 	order.back().push_back(pair<char, int>('i', 0));
@@ -181,12 +180,10 @@ Explorer::Explorer(string filename, const set<string> &flags, double res_X, doub
 	order.resize(order.size() + 1);
 	order.back().push_back(pair<char, int>('b', 0));
 	order.back().push_back(pair<char, int>('b', 1));
-	order.back().push_back(pair<char, int>('b', 2));
 
 	inp_view_template<Explorer> espec(b_temp, ti_temp, il_temp, il_widths, il_titles, order);
 
 	b_temp.clear();
-	order.back().pop_back();
 	b_temp.push_back(button_template<Explorer>(button_type::click, &Explorer::spec_reac_manipulate, this, "Save species", 2));
 	b_temp.push_back(button_template<Explorer>(button_type::click, &Explorer::spec_reac_manipulate, this, "Cancel", 10));
 
@@ -223,7 +220,6 @@ Explorer::Explorer(string filename, const set<string> &flags, double res_X, doub
 
 	b_temp.push_back(button_template<Explorer>(button_type::click, &Explorer::spec_reac_manipulate, this, "Save reaction", 3));
 	b_temp.push_back(button_template<Explorer>(button_type::click, &Explorer::spec_reac_manipulate, this, "Reset", 0));
-	b_temp.push_back(button_template<Explorer>(button_type::click, &Explorer::spec_reac_manipulate, this, "Cancel", 10));
 
 	order.resize(order.size() + 1);
 	order.back().push_back(pair<char, int>('i', 0));
@@ -246,12 +242,10 @@ Explorer::Explorer(string filename, const set<string> &flags, double res_X, doub
 	order.resize(order.size() + 1);
 	order.back().push_back(pair<char, int>('b', 0));
 	order.back().push_back(pair<char, int>('b', 1));
-	order.back().push_back(pair<char, int>('b', 2));
 
 	inp_view_template<Explorer> ereac(b_temp, ti_temp, il_temp, il_widths, il_titles, order);
 
 	b_temp.clear();
-	order.back().pop_back();
 	b_temp.push_back(button_template<Explorer>(button_type::click, &Explorer::spec_reac_manipulate, this, "Save reaction", 4));
 	b_temp.push_back(button_template<Explorer>(button_type::click, &Explorer::spec_reac_manipulate, this, "Cancel", 10));
 
@@ -272,7 +266,6 @@ Explorer::Explorer(string filename, const set<string> &flags, double res_X, doub
 
 	b_temp.push_back(button_template<Explorer>(button_type::click, &Explorer::spec_reac_manipulate, this, "Save compartment", 5));
 	b_temp.push_back(button_template<Explorer>(button_type::click, &Explorer::spec_reac_manipulate, this, "Reset", 0));
-	b_temp.push_back(button_template<Explorer>(button_type::click, &Explorer::spec_reac_manipulate, this, "Cancel", 10));
 
 	order.resize(order.size() + 1);
 	order.back().push_back(pair<char, int>('i', 0));
@@ -282,12 +275,10 @@ Explorer::Explorer(string filename, const set<string> &flags, double res_X, doub
 	order.resize(order.size() + 1);
 	order.back().push_back(pair<char, int>('b', 0));
 	order.back().push_back(pair<char, int>('b', 1));
-	order.back().push_back(pair<char, int>('b', 2));
 
 	inp_view_template<Explorer> ecomp(b_temp, ti_temp, il_temp, il_widths, il_titles, order);
 
 	b_temp.clear();
-	order.back().pop_back();
 	b_temp.push_back(button_template<Explorer>(button_type::click, &Explorer::spec_reac_manipulate, this, "Save compartment", 6));
 	b_temp.push_back(button_template<Explorer>(button_type::click, &Explorer::spec_reac_manipulate, this, "Cancel", 10));
 
@@ -4201,14 +4192,17 @@ void Explorer::find_reactant(int n, vector<string> &s, int select, bool &new_tex
 {
 	if (n > temp_reactants.size())
 	{
+		editing_entity = true;
 		temp_reactants.push_back(pair<string, double>("", 1.0));
 	}
 	if (select == -3)
 	{
+		editing_entity = true;
 		temp_reactants.pop_back();
 	}
 	else if (select >= 0)
 	{
+		editing_entity = true;
 		string sname = search_specs[select];
 		s.clear();
 		s.push_back(sname);
@@ -4216,6 +4210,7 @@ void Explorer::find_reactant(int n, vector<string> &s, int select, bool &new_tex
 	}
 	else if (select == -1 && s.size()>0)
 	{
+		editing_entity = true;
 		search_specs.clear();
 		string sname = s[0];
 		s.clear();
@@ -4289,14 +4284,17 @@ void Explorer::find_product(int n, vector<string> &s, int select, bool &new_text
 {
 	if (n > temp_products.size())
 	{
+		editing_entity = true;
 		temp_products.push_back(pair<string, double>("", 1.0));
 	}
 	if (select == -3)
 	{
+		editing_entity = true;
 		temp_products.pop_back();
 	}
 	else if (select >= 0)
 	{
+		editing_entity = true;
 		string sname = search_specs[select];
 		s.clear();
 		s.push_back(sname);
@@ -4304,6 +4302,7 @@ void Explorer::find_product(int n, vector<string> &s, int select, bool &new_text
 	}
 	else if (select == -1 && s.size()>0)
 	{
+		editing_entity = true;
 		search_specs.clear();
 		string sname = s[0];
 		s.clear();
@@ -4384,6 +4383,7 @@ void Explorer::find_compart(int n, vector<string> &s, int select, bool &new_text
 		{
 			if (i.first == sname)
 			{
+				editing_entity = true;
 				temp_spec.compart = sname;
 				break;
 			}
@@ -4425,6 +4425,7 @@ void Explorer::find_outside(int n, vector<string> &s, int select, bool &new_text
 {
 	if (select >= 0)
 	{
+		editing_entity = true;
 		string sname = search_comparts[select];
 		s.clear();
 		if(!sname.empty()) s.push_back(sname);
@@ -4695,6 +4696,7 @@ void Explorer::spec_reac_manipulate(int n, string &s)
 	{
 		win->set_mode(Window<Explorer>::neighbour_info);
 		editing_entity = false;
+		current_aoe_action = -1;
 	}
 	else if(win->apply_current_mode())
 	{
@@ -4792,9 +4794,9 @@ void Explorer::spec_reac_manipulate(int n, string &s)
 		}
 		editing_entity = false;
 		update_arrays();
+		current_aoe_action = -1;
 	}
 	else printf("\nCHANGE COULD NOT BE APPLIED - check for red fields!\n");
-	current_aoe_action = -1;
 	scr_upd = true;
 }
 
