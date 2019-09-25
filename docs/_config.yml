@@ -2,3 +2,5 @@ theme: jekyll-theme-cayman
 
 title: [ModelExplorer]
 description: [A software for visualization and correction of metabolic models]
+
+logo: /assets/images/logo.png
