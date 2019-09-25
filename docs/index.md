@@ -2,7 +2,7 @@
 layout: default
 ---
 
-![Octocat](https://github.githubassets.com/images/icons/emoji/octocat.png)
+![HeadImage](assets/images/logo.png)
 
 # ModelExplorer v2.1
 
