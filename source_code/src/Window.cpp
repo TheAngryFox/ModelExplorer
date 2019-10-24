@@ -2,6 +2,53 @@
 
 template class Window<Explorer>;
 
+map<pair<int,string>, pair<FONT*,set<FONT**>>> font_storage; // base font size, font file name, font pointer, number of users
+
+FONT* load_ttf_font(const string &font_path, int font_size, FONT** back_pointer)
+{
+    auto foundit = font_storage.find(make_pair(font_size,font_path));
+    if(foundit!=font_storage.end()) // if already loaded
+    {
+        foundit->second.second.insert(back_pointer); // add to the number of users
+        return foundit->second.first;
+    }
+    else
+    {
+        FONT * tempf = al_load_ttf_font(font_path.c_str(),font_size,0);
+        font_storage[make_pair(font_size,font_path)] = make_pair(tempf,set<FONT**>{back_pointer});
+        return tempf;
+    }
+};
+void attempt_destroy_font(const string &font_path, int font_size, FONT** back_pointer)
+{
+    auto foundit = font_storage.find(make_pair(font_size,font_path));
+    if(foundit!=font_storage.end()) // if loaded
+    {
+        (*foundit).second.second.erase(back_pointer);
+        if((*foundit).second.second.size()==0) // if the current deleter is the last user
+        {
+            if((*foundit).second.first!=NULL) al_destroy_font((*foundit).second.first);
+            font_storage.erase(foundit);
+        }
+    }
+};
+void clear_font_storage()
+{
+    for(const auto &i:font_storage) al_destroy_font(i.second.first);
+    font_storage.clear();
+};
+void set_font_scaling (double factor)
+{
+    for(auto &i:font_storage)
+    {
+        if(i.second.first!=NULL) al_destroy_font(i.second.first);
+        i.second.first = al_load_ttf_font(i.first.second.c_str(),(int)(factor*i.first.first),0);
+        for(auto &j:i.second.second) *j = i.second.first;
+    }
+}
+
+
+
 Scroll::Scroll(double x0, double y0, double x1, double y1, bool on, double frac) : Area(x0,y0,x1,y1,on)
 {
     fraction = frac;
@@ -18,9 +65,9 @@ void Scroll::Resize(double x_0, double y_0, double x_1, double y_1)
     y0=y_0;
     x1=x_1;
     y1=y_1;
-    bar_height = max(fraction * (y1-y0-2*v_margin),x1-x0-2*h_margin);
-    if((o_y1-o_y0-2*v_margin-o_bar_height)>0) bar_pos = y0+v_margin+(bar_pos-o_y0-v_margin)/(o_y1-o_y0-2*v_margin-o_bar_height)*(y1-y0-2*v_margin-bar_height);
-    else bar_pos = y0 + v_margin;
+    bar_height = max(fraction * (y1-y0-2*v_margin*scaling),x1-x0-2*h_margin*scaling);
+    if((o_y1-o_y0-2*v_margin*scaling-o_bar_height)>0) bar_pos = y0+v_margin*scaling+(bar_pos-o_y0-v_margin*scaling)/(o_y1-o_y0-2*v_margin*scaling-o_bar_height)*(y1-y0-2*v_margin*scaling-bar_height);
+    else bar_pos = y0 + v_margin*scaling;
 }
 
 void Scroll::change_scroll(double y_0, double y_1, double frac)
@@ -31,13 +78,13 @@ void Scroll::change_scroll(double y_0, double y_1, double frac)
     double o_y1 = y1;
     y0=y_0;
     y1=y_1;
-    bar_height = max(fraction * (y1-y0-2*v_margin),x1-x0-2*h_margin);
-    if((o_y1-o_y0-2*v_margin-o_bar_height)!=0) bar_pos = y0+v_margin+(bar_pos-o_y0-v_margin)/(o_y1-o_y0-2*v_margin-o_bar_height)*(y1-y0-2*v_margin-bar_height);
+    bar_height = max(fraction * (y1-y0-2*v_margin*scaling),x1-x0-2*h_margin*scaling);
+    if((o_y1-o_y0-2*v_margin*scaling-o_bar_height)!=0) bar_pos = y0+v_margin*scaling+(bar_pos-o_y0-v_margin*scaling)/(o_y1-o_y0-2*v_margin*scaling-o_bar_height)*(y1-y0-2*v_margin*scaling-bar_height);
 }
 
 void Scroll::set_barpos_by_rat(double new_rat)
 {
-	bar_pos = y0 + v_margin + new_rat*(y1 - y0 - 2 * v_margin - bar_height);
+	bar_pos = y0 + v_margin * scaling + new_rat*(y1 - y0 - 2 * v_margin * scaling - bar_height);
 }
 
 response_type Scroll::respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt,double mouse_x,double mouse_y,double mouse_dz,int &lock,event_type &hold_event,int in, pair<char, char> input)
@@ -48,59 +95,69 @@ response_type Scroll::respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt,do
 double Scroll::where_is_bar()
 {
     if(fraction==1) return 0;
-    return (bar_pos-v_margin-y0)/(y1-y0-2*v_margin-bar_height);
+    return (bar_pos-v_margin*scaling-y0)/(y1-y0-2*v_margin*scaling-bar_height);
 }
 
 double Scroll::mov(double d_pos)
 {
     double new_pos = bar_pos+d_pos;
-    double min_pos = y0+v_margin;
-    double max_pos = y1-v_margin-bar_height;
+    double min_pos = y0+v_margin*scaling;
+    double max_pos = y1-v_margin*scaling-bar_height;
     if(new_pos>max_pos) bar_pos = max_pos;
     else if (new_pos<min_pos) bar_pos = min_pos;
     else bar_pos = new_pos;
-    return (bar_pos-v_margin-y0)/(y1-y0-2*v_margin-bar_height);
+    return (bar_pos-v_margin*scaling-y0)/(y1-y0-2*v_margin*scaling-bar_height);
 }
 
 void Scroll::reset_bar()
 {
-	bar_pos = y0 + v_margin;
+	bar_pos = y0 + v_margin*scaling;
 }
 
 void Scroll::draw(ALLEGRO_DISPLAY * disp)
 {
     al_set_target_backbuffer(disp);
-    double bar_width = (x1-x0)-2*h_margin;
+    double bar_width = (x1-x0)-2*h_margin*scaling;
     al_draw_filled_rectangle(x0,y0,x1,y1,margin_c);
-    al_draw_filled_rounded_rectangle(x0+h_margin,y0+v_margin,x1-h_margin,y1-v_margin,bar_width*0.5,bar_width*0.5,whitespace_c);
-    al_draw_filled_rounded_rectangle(x0+h_margin,bar_pos,x1-h_margin,bar_pos+bar_height,bar_width*0.5,bar_width*0.5,(bar_mov) ? mov_bar_c : bar_c);
+    al_draw_filled_rounded_rectangle(x0+h_margin*scaling,y0+v_margin*scaling,x1-h_margin*scaling,y1-v_margin*scaling,bar_width*0.5,bar_width*0.5,whitespace_c);
+    al_draw_filled_rounded_rectangle(x0+h_margin*scaling,bar_pos,x1-h_margin*scaling,bar_pos+bar_height,bar_width*0.5,bar_width*0.5,(bar_mov) ? mov_bar_c : bar_c);
+}
+
+void Scroll::set_scaling(double factor)
+{
+    scaling = factor;
 }
 
 int Scroll::where_is_mouse(double m_x,double m_y)
 {
-    if(m_x>(x0+h_margin) && m_y>bar_pos && m_x<(x1-h_margin) && m_y<(bar_pos+bar_height)) return 1;
+    if(m_x>(x0+h_margin*scaling) && m_y>bar_pos && m_x<(x1-h_margin*scaling) && m_y<(bar_pos+bar_height)) return 1;
     else return 0;
 }
 
 template<class T>
-Text<T>::Text(double x0, double y0, double x1, double y1, bool on, vector<string> str) : Area(x0,y0,x1,y1,on)
+Text<T>::Text(double x0, double y0, double x1, double y1, bool on, vector<string> str, int font_size, int title_font_size) : Area(x0,y0,x1,y1,on), font_size(font_size), title_font_size(title_font_size)
 {
     raw_str=str;
-    font = al_load_ttf_font(font_file_name.c_str(),font_size,0);
-    title_font = al_load_ttf_font(font_file_name.c_str(),title_font_size,0);
+    font = load_ttf_font(font_file_name,font_size,&font);
+    title_font = load_ttf_font(font_file_name,title_font_size,&title_font);
+    h_space = 0.5*font_size; 
+    separator_h = 0.1*font_size;
+    title_h_space = 0.5*title_font_size;
     Change_text(str);
     full_text = al_create_bitmap(x1-x0,y1-y0-2*v_margin-title_height);
 }
 
 template<class T>
-Text<T>::Text(double x0, double y0, double x1, double y1, bool on, vector<string> str, cb_fun_ptr cb_fun, T * cb_ob, int id) : Area(x0, y0, x1, y1, on), cb_fun(cb_fun), cb_ob(cb_ob), id(id)
+Text<T>::Text(double x0, double y0, double x1, double y1, bool on, vector<string> str, cb_fun_ptr cb_fun, T * cb_ob, int id, int font_size, int title_font_size) : Area(x0, y0, x1, y1, on), cb_fun(cb_fun), cb_ob(cb_ob), id(id), font_size(font_size), title_font_size(title_font_size)
 {
+    h_space = 0.5*font_size; 
+    title_h_space = 0.5*title_font_size;
 	selectable = true;
 	separator_h = selectable_separator_h;
 	separator_c = selectable_separator_c;
 	raw_str = str;
-	font = al_load_ttf_font(font_file_name.c_str(), font_size, 0);
-	title_font = al_load_ttf_font(font_file_name.c_str(), title_font_size, 0);
+	font = load_ttf_font(font_file_name, font_size, &font);
+	title_font = load_ttf_font(font_file_name, title_font_size, &title_font);
 	Change_text(str);
 	full_text = al_create_bitmap(x1 - x0, y1 - y0 - 2 * v_margin - title_height);
 }
@@ -108,13 +165,16 @@ Text<T>::Text(double x0, double y0, double x1, double y1, bool on, vector<string
 template<class T>
 void Text<T>::Resize(double x_0, double y_0, double x_1, double y_1)
 {
+    h_space = 0.5*font_size*scaling; 
+    title_h_space = 0.5*title_font_size*scaling;
+    separator_h = (separator_h==0.0) ? 0.0 : 0.1*font_size*scaling; 
     x0=x_0;
     y0=y_0;
     x1=x_1;
     y1=y_1;
     Change_text(raw_str);
     if(full_text!=NULL) al_destroy_bitmap(full_text);
-    full_text = al_create_bitmap(x1-x0,y1-y0-2*v_margin-title_height);
+    full_text = al_create_bitmap(x1-x0,y1-y0-2*v_margin*scaling-title_height);
 	
 }
 
@@ -126,8 +186,8 @@ void Text<T>::Change_text(vector<string> str)
 	tab_line_links.clear();
     tex.clear();
     tex_c.clear();
-    double width = x1-x0-2*h_space-2*h_margin;
-    double title_width = x1-x0-2*title_h_space-2*h_margin;
+    double width = x1-x0-2*h_space*scaling-2*h_margin*scaling;
+    double title_width = x1-x0-2*title_h_space*scaling-2*h_margin*scaling;
 
     /// Get the title
 
@@ -263,21 +323,21 @@ void Text<T>::Change_text(vector<string> str)
 
     /// Get title height
     title_height = 0;
-    for(string& i:title) title_height+=title_font_size*line_spacing;
+    for(string& i:title) title_height+=title_font_size*line_spacing*scaling;
 
     /// What bitmap height do we need?
     text_height = 0;
-    for(string& i:tex) if(i!="\t") text_height+=font_size*line_spacing; 
+    for(string& i:tex) if(i!="\t") text_height+=font_size*line_spacing*scaling; 
 }
 
 template<class T>
 int Text<T>::tab_from_pos(double mouse_x, double mouse_y)
 {
-	if (mouse_x > x0 && mouse_x < x1 && mouse_y >(y0 + v_margin + title_height) && mouse_y < (y0 + v_margin + title_height + text_height))
+	if (mouse_x > x0 && mouse_x < x1 && mouse_y >(y0 + v_margin*scaling + title_height) && mouse_y < (y0 + v_margin*scaling + title_height + text_height))
 	{
-		double drawing_h = y1 - y0 - 2 * v_margin - title_height;
+		double drawing_h = y1 - y0 - 2 * v_margin * scaling - title_height;
 		double draw_pos = where_bar_is * (text_height - drawing_h);
-		int current_line = (int)(floor)(mouse_y - (y0 + v_margin + title_height) + draw_pos) / (font_size * line_spacing);
+		int current_line = (int)(floor)(mouse_y - (y0 + v_margin*scaling + title_height) + draw_pos) / (font_size * line_spacing * scaling);
 		for (size_t i = 0; i < tab_line_links.size(); i++)
 		{
 			if (current_line >= tab_line_links[i].first && current_line <= tab_line_links[i].second)
@@ -286,7 +346,7 @@ int Text<T>::tab_from_pos(double mouse_x, double mouse_y)
 			}
 		}
 	}
-	else return -1;
+	return -1;
 }
 
 template<class T>
@@ -328,10 +388,10 @@ template<class T>
 void Text<T>::draw(ALLEGRO_DISPLAY* disp)
 {
     al_set_target_backbuffer(disp);
-    double drawing_h = y1-y0-2*v_margin-title_height;
+    double drawing_h = y1-y0-2*v_margin*scaling-title_height;
     double draw_pos = where_bar_is*(text_height-drawing_h);
-    double first_line = (int)floor(draw_pos/(font_size*line_spacing));
-    double last_line = (int)floor((draw_pos+drawing_h)/(font_size*line_spacing));
+    double first_line = (int)floor(draw_pos/(font_size*line_spacing*scaling));
+    double last_line = (int)floor((draw_pos+drawing_h)/(font_size*line_spacing*scaling));
 
 
     int act_fir_line = 0;
@@ -341,8 +401,8 @@ void Text<T>::draw(ALLEGRO_DISPLAY* disp)
         if(tex[i]!="\t") act_fir_line++;
     }
 
-    double pos = first_line*font_size*line_spacing - draw_pos;
-    double end_pos = pos+(last_line-first_line+0.1)*font_size*line_spacing;
+    double pos = first_line*font_size*line_spacing*scaling - draw_pos;
+    double end_pos = pos+(last_line-first_line+0.1)*font_size*line_spacing*scaling;
     al_set_target_bitmap(full_text);
     al_clear_to_color(background_c);
 
@@ -351,37 +411,46 @@ void Text<T>::draw(ALLEGRO_DISPLAY* disp)
 	{
 		if (tab != -1)
 		{
-			double but_pos_1 = tab_line_links[tab].first * font_size * line_spacing - draw_pos;
-			double but_pos_2 = but_pos_1 + (tab_line_links[tab].second - tab_line_links[tab].first + 1) * font_size * line_spacing;
-			al_draw_filled_rectangle(0, but_pos_1 - 0.5*separator_h - 0.25*(line_spacing - 1.)*font_size, x1 - x0, but_pos_2 + 0.5*separator_h - 0.25*(line_spacing - 1.)*font_size, separator_c);
+			double but_pos_1 = tab_line_links[tab].first * font_size * line_spacing * scaling - draw_pos;
+			double but_pos_2 = but_pos_1 + (tab_line_links[tab].second - tab_line_links[tab].first + 1) * font_size * line_spacing * scaling;
+			al_draw_filled_rectangle(0, but_pos_1 - 0.5*separator_h*scaling - 0.25*(line_spacing - 1.)*font_size * scaling, x1 - x0, but_pos_2 + 0.5*separator_h*scaling - 0.25*(line_spacing - 1.)*font_size*scaling, separator_c);
 		}
 	}
 
     int iter = act_fir_line;
     while(pos<end_pos && iter<(int)tex.size())
     {
-        if(tex[iter]=="\t") al_draw_filled_rectangle(0,pos-0.5*separator_h-0.25*(line_spacing-1.)*font_size,x1-x0,pos+0.5*separator_h-0.25*(line_spacing-1.)*font_size,separator_c);
+        if(tex[iter]=="\t") 
+        {
+            al_draw_filled_rectangle(0,pos-0.5*separator_h*scaling-0.25*(line_spacing-1.)*font_size*scaling,x1-x0,pos+0.5*separator_h*scaling-0.25*(line_spacing-1.)*font_size*scaling,separator_c);
+        }
         else
         {
-            al_draw_textf(font,tex_c[iter],h_margin+h_space,pos,ALLEGRO_ALIGN_LEFT,"%s",tex[iter].c_str());
-            pos+=font_size*line_spacing;
+            al_draw_textf(font,tex_c[iter],(h_margin+h_space)*scaling,pos,ALLEGRO_ALIGN_LEFT,"%s",tex[iter].c_str());
+            pos+=font_size*line_spacing*scaling;
         }
         iter++;
     }
 
     al_set_target_backbuffer(disp);
-    al_draw_bitmap(full_text,x0,y0+v_margin+title_height,0);
-    al_draw_filled_rectangle(x0,y0,x1,y0+v_margin+title_height,title_background_c);
+    al_draw_bitmap(full_text,x0,y0+v_margin*scaling+title_height,0);
+    al_draw_filled_rectangle(x0,y0,x1,y0+v_margin*scaling+title_height,title_background_c);
     for(int i=0;i<(int)title.size();i++)
     {
-        double pos = v_margin + i*title_font_size*line_spacing;
-        al_draw_textf(title_font,title_text_c,x0+h_margin+title_h_space,y0+pos,ALLEGRO_ALIGN_LEFT,"%s",title[i].c_str());
+        double pos = v_margin*scaling + i*title_font_size*line_spacing*scaling;
+        al_draw_textf(title_font,title_text_c,x0+(h_margin+title_h_space)*scaling,y0+pos,ALLEGRO_ALIGN_LEFT,"%s",title[i].c_str());
     }
 
-    al_draw_filled_rectangle(x0,y0,x0+h_margin,y1,margin_c);
-    al_draw_filled_rectangle(x1-h_margin,y0,x1,y1,margin_c);
-    al_draw_filled_rectangle(x0,y0,x1,y0+v_margin,margin_c);
-    al_draw_filled_rectangle(x0,y1-v_margin,x1,y1,margin_c);
+    al_draw_filled_rectangle(x0,y0,x0+h_margin*scaling,y1,margin_c);
+    al_draw_filled_rectangle(x1-h_margin*scaling,y0,x1,y1,margin_c);
+    al_draw_filled_rectangle(x0,y0,x1,y0+v_margin*scaling,margin_c);
+    al_draw_filled_rectangle(x0,y1-v_margin*scaling,x1,y1,margin_c);
+}
+
+template<class T>
+void Text<T>::set_scaling(double factor)
+{
+    scaling = factor;
 }
 
 template<class T>
@@ -403,15 +472,16 @@ void Text<T>::redraw(ALLEGRO_DISPLAY* disp)
 }
 
 template <class T>
-Text_view<T>::Text_view(double x0, double y0, double x1, double y1, bool on, vector<string> &str, double v_margin, double h_margin, COL margin_c, double max_size, cb_fun_ptr cb_fun, T * cb_ob, int id) 
+Text_view<T>::Text_view(double x0, double y0, double x1, double y1, bool on, vector<string> &str, int font_size, int title_font_size, double v_margin, double h_margin, COL margin_c, double max_size, cb_fun_ptr cb_fun, T * cb_ob, int id) 
 	: Area(x0,y0,x1,y1,on), v_margin(v_margin), h_margin(h_margin), margin_c(margin_c), max_size(max_size)
 {
+    scroll_w = font_size / 5 * 8;
 	if (cb_ob != NULL)
 	{
 		selectable = true;
-		t = new Text<T>(x0 + h_margin, y0 + v_margin, x1 - scroll_w - h_margin, y1 - v_margin, true, str, cb_fun, cb_ob, id);
+		t = new Text<T>(x0 + h_margin, y0 + v_margin, x1 - scroll_w - h_margin, y1 - v_margin, true, str, cb_fun, cb_ob, id, font_size, title_font_size);
 	}
-    else t = new Text<T>(x0+h_margin,y0+v_margin,x1-scroll_w-h_margin,y1-v_margin,true,str);
+    else t = new Text<T>(x0+h_margin,y0+v_margin,x1-scroll_w-h_margin,y1-v_margin,true,str, font_size, title_font_size);
 	s = new Scroll(x1 - scroll_w - h_margin, t->get_y0(), x1 - h_margin, t->get_y1(), true, min(t->get_frac(), 1.));
 
 	if (max_size != -1)
@@ -430,8 +500,8 @@ void Text_view<T>::Resize (double x_0, double y_0, double x_1, double y_1)
     y0=y_0;
     x1=x_1;
     y1=y_1;
-    t->Resize(x0+h_margin,y0+v_margin,x1-scroll_w-h_margin,y1-v_margin);
-    s->Resize(x1-scroll_w+h_margin,y0+v_margin,x1-h_margin,y1-v_margin);
+    t->Resize(x0+h_margin*scaling,y0+v_margin*scaling,x1-scroll_w*scaling-h_margin*scaling,y1-v_margin*scaling);
+    s->Resize(x1-scroll_w*scaling+h_margin*scaling,y0+v_margin*scaling,x1-h_margin*scaling,y1-v_margin*scaling);
 	s->change_scroll(s->get_y0(), s->get_y1(), min(t->get_frac(), 1.));
 }
 
@@ -450,7 +520,7 @@ void Text_view<T>::Change_text(vector<string> &str)
 	{
 		if (get_min_tot_height() < max_size)
 		{
-			Resize(x0, y0, x1, y0 + 2 * v_margin + get_min_tot_height());
+			Resize(x0, y0, x1, y0 + 2 * v_margin * scaling + get_min_tot_height());
 		}
 		else Resize(x0, y0, x1, y0 + max_size);
 	}
@@ -536,14 +606,33 @@ template <class T>
 void Text_view<T>::draw(ALLEGRO_DISPLAY * disp)
 {
     al_set_target_backbuffer(disp);
-    al_draw_filled_rectangle(x0,y0,x1,y0+v_margin,margin_c);
-    al_draw_filled_rectangle(x0,y1,x1,y1-v_margin,margin_c);
-    al_draw_filled_rectangle(x0,y0,x0+h_margin,y1,margin_c);
-    al_draw_filled_rectangle(x1,y0,x1-h_margin,y1,margin_c);
+    al_draw_filled_rectangle(x0,y0,x1,y0+v_margin*scaling,margin_c);
+    al_draw_filled_rectangle(x0,y1,x1,y1-v_margin*scaling,margin_c);
+    al_draw_filled_rectangle(x0,y0,x0+h_margin*scaling,y1,margin_c);
+    al_draw_filled_rectangle(x1,y0,x1-h_margin*scaling,y1,margin_c);
 
     s->draw(disp);
     t->set_pos(s->where_is_bar());
     t->draw(disp);
+}
+
+template<class T>
+void Text_view<T>::set_scaling(double factor)
+{
+    scaling = factor; 
+
+    t->set_scaling(scaling);
+    s->set_scaling(scaling);
+
+    Resize(x0,y0,x1,y1);
+}
+
+template<class T>
+void Text_view<T>::shift(double dx,double dy)
+{
+    x0 += dx; x1 +=dx; y0 +=dy; y1 +=dy;
+    t->shift(dx,dy);
+    s->shift(dx,dy);
 }
 
 
@@ -555,7 +644,7 @@ template <class T>
 Input_view<T>::Input_view(double x0, double y0, double x1, double y1, bool on, string title, inp_view_template<T> t)
 	: Area(x0, y0, x1, y1, on), title(title), order(t.order)
 {
-	title_font = al_load_ttf_font(font_file_name.c_str(), title_font_height, 0);
+	title_font = load_ttf_font(font_file_name, title_font_height, &title_font);
 
 	typename Text_input<T>::graphics g;
 	g.margin = margin;
@@ -615,15 +704,15 @@ void Input_view<T>::Resize(double x_0, double y_0, double x_1, double y_1)
 	double deltaY = (y_1 - y_0) - (y1 - y0);
 	double delx = x_0 - x0;
 	double dely = y_0 - y0;
-	double orig_rat = max(1.0 - (y1 - y0 - 2*v_margin - title_font_height * title_line_spacing)/tot_h,0.);
-	double new_rat = max(1.0 - (y_1 - y_0 - 2 * v_margin - title_font_height * title_line_spacing)/tot_h,0.);
+	double orig_rat = max(1.0 - (y1 - y0 - 2*v_margin*scaling - title_font_height * title_line_spacing*scaling)/tot_h,0.);
+	double new_rat = max(1.0 - (y_1 - y_0 - 2 * v_margin*scaling - title_font_height * title_line_spacing*scaling)/tot_h,0.);
 	double upper_y = 0;
-	if (order[0][0].first == 'b') upper_y = buttons[order[0][0].second]->get_y0() - content_space;
-	else if (order[0][0].first == 'i') upper_y = text_inputs[order[0][0].second]->get_y0() - content_space;
-	else if (order[0][0].first == 'l') upper_y = input_lists[order[0][0].second]->get_y0() - content_space;
+	if (order[0][0].first == 'b') upper_y = buttons[order[0][0].second]->get_y0() - content_space*scaling;
+	else if (order[0][0].first == 'i') upper_y = text_inputs[order[0][0].second]->get_y0() - content_space*scaling;
+	else if (order[0][0].first == 'l') upper_y = input_lists[order[0][0].second]->get_y0() - content_space*scaling;
 	if (new_rat < orig_rat)
 	{
-		dely += deltaY * (y0 + v_margin + title_font_height * title_line_spacing  - upper_y) / (upper_y + tot_h - (y1 - v_margin));
+		dely += deltaY * (y0 + v_margin*scaling + title_font_height * title_line_spacing*scaling  - upper_y) / (upper_y + tot_h - (y1 - v_margin*scaling));
 	}
 
 	x0 = x_0;
@@ -633,13 +722,13 @@ void Input_view<T>::Resize(double x_0, double y_0, double x_1, double y_1)
 	for (const auto &i : buttons) i->shift(delx, dely);
 	for (const auto &i : text_inputs) i->shift(delx, dely);
 	for (const auto &i : input_lists) i->shift(delx, dely);
-	s->Resize(x1 - scroll_w - h_margin, y0 + v_margin, x1 - h_margin, y1 - v_margin);
-	s->change_scroll(s->get_y0(), s->get_y1(), min((y1 - y0 - 2 * v_margin - title_font_height * title_line_spacing) / tot_h, 1.));
+	s->Resize(x1 - scroll_w*scaling - h_margin*scaling, y0 + v_margin*scaling, x1 - h_margin*scaling, y1 - v_margin*scaling);
+	s->change_scroll(s->get_y0(), s->get_y1(), min((y1 - y0 - 2 * v_margin*scaling - title_font_height * title_line_spacing*scaling) / tot_h, 1.));
 
-	if (order[0][0].first == 'b') upper_y = buttons[order[0][0].second]->get_y0() - content_space;
-	else if (order[0][0].first == 'i') upper_y = text_inputs[order[0][0].second]->get_y0() - content_space;
-	else if (order[0][0].first == 'l') upper_y = input_lists[order[0][0].second]->get_y0() - content_space;
-	s->set_barpos_by_rat((y0 + v_margin + title_font_height*title_line_spacing - upper_y) / (tot_h - (y1 - y0 - 2* v_margin - title_font_height * title_line_spacing)));
+	if (order[0][0].first == 'b') upper_y = buttons[order[0][0].second]->get_y0() - content_space*scaling;
+	else if (order[0][0].first == 'i') upper_y = text_inputs[order[0][0].second]->get_y0() - content_space*scaling;
+	else if (order[0][0].first == 'l') upper_y = input_lists[order[0][0].second]->get_y0() - content_space*scaling;
+	s->set_barpos_by_rat((y0 + v_margin*scaling + title_font_height*title_line_spacing*scaling - upper_y) / (tot_h - (y1 - y0 - 2* v_margin*scaling - title_font_height * title_line_spacing*scaling)));
 }
 
 template <class T>
@@ -663,9 +752,9 @@ response_type Input_view<T>::respond_to_event(ALLEGRO_DISPLAY * disp, event_type
 		{
 			if (lock == in && input_lock == -1 && hold_event == event_type::lmb_down)
 			{
-				double inpos = s->where_is_bar()*(tot_h - (y1 - y0 - 2 * v_margin - title_font_height * title_line_spacing));
+				double inpos = s->where_is_bar()*(tot_h - (y1 - y0 - 2 * v_margin*scaling - title_font_height*title_line_spacing*scaling));
 				s->mov(mouse_y - prev_mouse_y);
-				double d = -(s->where_is_bar()*(tot_h - (y1 - y0 - 2 * v_margin - title_font_height * title_line_spacing)) - inpos);
+				double d = -(s->where_is_bar()*(tot_h - (y1 - y0 - 2 * v_margin*scaling - title_font_height*title_line_spacing*scaling)) - inpos);
 				for (const auto &i : buttons) i->shift(0,d);
 				for (const auto &i : text_inputs) i->shift(0, d);
 				for (const auto &i : input_lists) i->shift(0, d);
@@ -678,10 +767,10 @@ response_type Input_view<T>::respond_to_event(ALLEGRO_DISPLAY * disp, event_type
 		{
 			if (lock == in && input_lock == -1 && hold_event == event_type::lmb_down)
 			{
-				double inpos = s->where_is_bar()*(tot_h - (y1 - y0 - 2 * v_margin - title_font_height * title_line_spacing));
+				double inpos = s->where_is_bar()*(tot_h - (y1 - y0 - 2*v_margin*scaling - title_font_height*title_line_spacing*scaling));
 				s->bar_moving(false);
 				s->mov(mouse_y - prev_mouse_y);
-				double d = -(s->where_is_bar()*(tot_h - (y1 - y0 - 2 * v_margin - title_font_height * title_line_spacing)) - inpos);
+				double d = -(s->where_is_bar()*(tot_h - (y1 - y0 - 2*v_margin*scaling - title_font_height*title_line_spacing*scaling)) - inpos);
 				for (const auto &i : buttons) i->shift(0, d);
 				for (const auto &i : text_inputs) i->shift(0, d);
 				for (const auto &i : input_lists)  i->shift(0, d);
@@ -695,9 +784,9 @@ response_type Input_view<T>::respond_to_event(ALLEGRO_DISPLAY * disp, event_type
 		{
 			if (mouse_inside(mouse_x, mouse_y))
 			{
-				double inpos = s->where_is_bar()*(tot_h - (y1 - y0 - 2 * v_margin - title_font_height * title_line_spacing ));
+				double inpos = s->where_is_bar()*(tot_h - (y1 - y0 - 2*v_margin*scaling - title_font_height*title_line_spacing*scaling ));
 				s->mov(-mouse_dz * scroll_speed);
-				double d = -(s->where_is_bar()*(tot_h - (y1 - y0 - 2 * v_margin - title_font_height * title_line_spacing)) - inpos);
+				double d = -(s->where_is_bar()*(tot_h - (y1 - y0 - 2*v_margin*scaling - title_font_height*title_line_spacing*scaling )) - inpos);
 				for (const auto &i : buttons) i->shift(0, d);
 				for (const auto &i : text_inputs) i->shift(0, d);
 				for (const auto &i : input_lists)  i->shift(0, d);
@@ -735,11 +824,11 @@ void Input_view<T>::adjust_y(double orig_dimy, Input_list<T> *i)
 	if ((i->get_y1() - i->get_y0()) != orig_dimy)
 	{
 		double upper_y = 0;
-		if (order[0][0].first == 'b') upper_y = buttons[order[0][0].second]->get_y0() - content_space;
-		else if (order[0][0].first == 'i') upper_y = text_inputs[order[0][0].second]->get_y0() - content_space;
-		else if (order[0][0].first == 'l') upper_y = input_lists[order[0][0].second]->get_y0() - content_space;
+		if (order[0][0].first == 'b') upper_y = buttons[order[0][0].second]->get_y0() - content_space*scaling;
+		else if (order[0][0].first == 'i') upper_y = text_inputs[order[0][0].second]->get_y0() - content_space*scaling;
+		else if (order[0][0].first == 'l') upper_y = input_lists[order[0][0].second]->get_y0() - content_space*scaling;
 
-		double pos_y = upper_y + content_space;
+		double pos_y = upper_y + content_space*scaling;
 		for (const auto &i : order)
 		{
 			double delta_y = 0;
@@ -761,18 +850,18 @@ void Input_view<T>::adjust_y(double orig_dimy, Input_list<T> *i)
 					delta_y = max(delta_y, input_lists[j.second]->get_y1() - input_lists[j.second]->get_y0());
 				}
 			}
-			pos_y += delta_y + content_space;
+			pos_y += delta_y + content_space*scaling;
 		}
 		double temp_tot_h = pos_y - upper_y;
 		if (temp_tot_h != tot_h)
 		{
-			s->rescale_bar((y1 - y0 - 2 * v_margin - title_font_height * title_line_spacing) / temp_tot_h);
+			s->rescale_bar((y1 - y0 - 2 * v_margin*scaling - title_font_height * title_line_spacing*scaling) / temp_tot_h);
 
 			if (temp_tot_h < tot_h)
 			{
-				if (upper_y + temp_tot_h < (y1 - v_margin))
+				if (upper_y + temp_tot_h < (y1 - v_margin*scaling))
 				{
-					double d = min(y0 + v_margin + title_font_height * title_line_spacing - upper_y, y1 - v_margin - (upper_y + temp_tot_h));
+					double d = min(y0 + v_margin*scaling + title_font_height * title_line_spacing*scaling - upper_y, y1 - v_margin*scaling - (upper_y + temp_tot_h));
 					for (const auto &i : buttons) i->shift(0, d);
 					for (const auto &i : text_inputs) i->shift(0, d);
 					for (const auto &i : input_lists)  i->shift(0, d);
@@ -780,10 +869,10 @@ void Input_view<T>::adjust_y(double orig_dimy, Input_list<T> *i)
 			}
 
 			double upper_y = 0;
-			if (order[0][0].first == 'b') upper_y = buttons[order[0][0].second]->get_y0() - content_space;
-			else if (order[0][0].first == 'i') upper_y = text_inputs[order[0][0].second]->get_y0() - content_space;
-			else if (order[0][0].first == 'l') upper_y = input_lists[order[0][0].second]->get_y0() - content_space;
-			s->set_barpos_by_rat((y0 + v_margin + title_font_height * title_line_spacing - upper_y) / (temp_tot_h - (y1 - y0 - 2 * v_margin - title_font_height * title_line_spacing)));
+			if (order[0][0].first == 'b') upper_y = buttons[order[0][0].second]->get_y0() - content_space*scaling;
+			else if (order[0][0].first == 'i') upper_y = text_inputs[order[0][0].second]->get_y0() - content_space*scaling;
+			else if (order[0][0].first == 'l') upper_y = input_lists[order[0][0].second]->get_y0() - content_space*scaling;
+			s->set_barpos_by_rat((y0 + v_margin*scaling + title_font_height * title_line_spacing*scaling - upper_y) / (temp_tot_h - (y1 - y0 - 2 * v_margin*scaling - title_font_height * title_line_spacing*scaling)));
 
 			tot_h = temp_tot_h;
 		}
@@ -810,10 +899,10 @@ template <class T>
 void Input_view<T>::move_into_position()
 {
 	double upper_y = 0;
-	if (order[0][0].first == 'b') upper_y = buttons[order[0][0].second]->get_y0() - content_space;
-	else if (order[0][0].first == 'i') upper_y = text_inputs[order[0][0].second]->get_y0() - content_space;
-	else if (order[0][0].first == 'l') upper_y = input_lists[order[0][0].second]->get_y0() - content_space;
-	double pos_y = upper_y + content_space;
+	if (order[0][0].first == 'b') upper_y = buttons[order[0][0].second]->get_y0() - content_space*scaling;
+	else if (order[0][0].first == 'i') upper_y = text_inputs[order[0][0].second]->get_y0() - content_space*scaling;
+	else if (order[0][0].first == 'l') upper_y = input_lists[order[0][0].second]->get_y0() - content_space*scaling;
+	double pos_y = upper_y + content_space*scaling;
 
 	for (const auto &i : order)
 	{
@@ -836,7 +925,7 @@ void Input_view<T>::move_into_position()
 				delta_y = max(delta_y, input_lists[j.second]->get_y1() - input_lists[j.second]->get_y0());
 			}
 		}
-		pos_y += delta_y + content_space;
+		pos_y += delta_y + content_space*scaling;
 	}
 	tot_h = pos_y - upper_y;
 }
@@ -875,32 +964,120 @@ void Input_view<T>::draw(ALLEGRO_DISPLAY * disp)
 	for (const auto& i : text_inputs) { if (iter == input_lock) i->draw(disp); iter++; }
 	for (const auto& i : input_lists) { if (iter == input_lock) i->draw(disp); iter++; }
 
-	al_draw_filled_rectangle(x0, y0, x1, y0 + v_margin + title_font_height * title_line_spacing, title_background_c);
-	al_draw_textf(title_font, title_text_c, x0 + h_margin + content_space, y0 + v_margin, ALLEGRO_ALIGN_LEFT, "%s", title.c_str());
+	al_draw_filled_rectangle(x0, y0, x1, y0 + v_margin*scaling + title_font_height * title_line_spacing *scaling, title_background_c);
+	al_draw_textf(title_font, title_text_c, x0 + h_margin*scaling + content_space*scaling, y0 + v_margin*scaling, ALLEGRO_ALIGN_LEFT, "%s", title.c_str());
 
 	s->draw(disp);
 
 	al_set_clipping_rectangle(x, y, w, h);
 
-	al_draw_filled_rectangle(x0, y0, x1, y0 + v_margin, margin_c);
-	al_draw_filled_rectangle(x0, y1, x1, y1 - v_margin, margin_c);
-	al_draw_filled_rectangle(x0, y0, x0 + h_margin, y1, margin_c);
-	al_draw_filled_rectangle(x1, y0, x1 - h_margin, y1, margin_c);
+	al_draw_filled_rectangle(x0, y0, x1, y0 + v_margin*scaling, margin_c);
+	al_draw_filled_rectangle(x0, y1, x1, y1 - v_margin*scaling, margin_c);
+	al_draw_filled_rectangle(x0, y0, x0 + h_margin*scaling, y1, margin_c);
+	al_draw_filled_rectangle(x1, y0, x1 - h_margin*scaling, y1, margin_c);
 }
 
+template<class T>
+void Input_view<T>::set_scaling(double factor)
+{
+    scaling = factor; 
 
+    for(auto &i:buttons) i->set_scaling(scaling);
+    for(auto &i:text_inputs) i->set_scaling(scaling);
+    for(auto &i:input_lists) i->set_scaling(scaling);
+    s->set_scaling(scaling);
+
+    double pos_y = y0 + v_margin*scaling + title_font_height*title_line_spacing*scaling + content_space*scaling;
+
+    int iterB = 0;
+    int iterI = 0;
+    int iterL = 0;
+	for (const auto &i : order)
+	{
+		double pos_x = x0 + h_margin*scaling + content_space*scaling;
+		double delta_y = 0;
+		for (const pair<char, int> &j : i)
+		{
+			if (j.first == 'b')
+			{
+				delta_y = max(delta_y, buttons[iterB]->get_y1() - buttons[iterB]->get_y0());
+                buttons[iterB]->shift(pos_x-buttons[iterB]->get_x0(),pos_y-buttons[iterB]->get_y0());
+                pos_x += buttons[iterB]->get_x1() - buttons[iterB]->get_x0() + content_space*scaling;
+                iterB++;
+			}
+			else if (j.first == 'i')
+			{
+				delta_y = max(delta_y, text_inputs[iterI]->get_y1() - text_inputs[iterI]->get_y0());
+                text_inputs[iterI]->shift(pos_x-text_inputs[iterI]->get_x0(),pos_y-text_inputs[iterI]->get_y0());
+                pos_x += text_inputs[iterI]->get_x1() - text_inputs[iterI]->get_x0() + content_space*scaling;
+                iterI++;
+			}
+			else if (j.first == 'l')
+			{
+				delta_y = max(delta_y, input_lists[iterL]->get_y1() - input_lists[iterL]->get_y0());
+                input_lists[iterL]->shift(pos_x-input_lists[iterL]->get_x0(),pos_y-input_lists[iterL]->get_y0());
+                pos_x += input_lists[iterL]->get_x1() - input_lists[iterL]->get_x0() + content_space*scaling;
+                iterL++;
+			}
+		}
+		pos_y += delta_y + content_space*scaling;
+	}
+	tot_h = pos_y - y0 - v_margin*scaling - title_font_height*title_line_spacing*scaling;
+
+    Resize(x0, y0, x1, y1);
+
+
+/* 	for (const auto &i : order)
+	{
+		double pos_x = x0 + h_margin + content_space;
+		double delta_y = 0;
+		for (const pair<char, int> &j : i)
+		{
+			if (j.first == 'b')
+			{
+				buttons.push_back(new Button<T>(pos_x, pos_y, font_size, font_file_name, t.buttons[j.second], margin, space, corner_r, button_c, p_button_c, margin_c, p_margin_c, font_c, p_font_c));
+				pos_x += buttons.back()->get_x1() - buttons.back()->get_x0() + content_space;
+				delta_y = max(delta_y, buttons.back()->get_y1() - buttons.back()->get_y0());
+			}
+			else if (j.first == 'i')
+			{
+				text_inputs.push_back(new Text_input<T>(pos_x, pos_y, pos_x + text_inp_width, font_file_name, t.text_inputs[j.second], g, true, true));
+				pos_x += text_inputs.back()->get_x1() - text_inputs.back()->get_x0() + content_space;
+				delta_y = max(delta_y, text_inputs.back()->get_y1() - text_inputs.back()->get_y0());
+			}
+			else if (j.first == 'l')
+			{
+				input_lists.push_back(new Input_list<T>(pos_x, pos_y, t.list_widths[j.second], font_file_name, t.input_lists[j.second], g, t.list_titles[j.second]));
+				pos_x += input_lists.back()->get_x1() - input_lists.back()->get_x0() + content_space;
+				delta_y = max(delta_y, input_lists.back()->get_y1() - input_lists.back()->get_y0());
+			}
+		}
+		pos_y += delta_y + content_space;
+	}
+	tot_h = pos_y - y0 - v_margin - title_font_height * title_line_spacing; */
+
+/*     s->Resize(x1 - scroll_w*scaling - h_margin*scaling, y0 + v_margin*scaling, x1 - h_margin*scaling, y1 - v_margin*scaling);
+	s->change_scroll(s->get_y0(), s->get_y1(), min((y1 - y0 - 2 * v_margin*scaling-title_font_height * title_line_spacing*scaling) / tot_h, 1.));
+
+    double upper_y = 0;
+	if (order[0][0].first == 'b') upper_y = buttons[order[0][0].second]->get_y0() - content_space*scaling;
+	else if (order[0][0].first == 'i') upper_y = text_inputs[order[0][0].second]->get_y0() - content_space*scaling;
+	else if (order[0][0].first == 'l') upper_y = input_lists[order[0][0].second]->get_y0() - content_space*scaling;
+	s->set_barpos_by_rat((y0 + v_margin*scaling + title_font_height*title_line_spacing*scaling - upper_y) / 
+                            (tot_h - (y1 - y0 - 2* v_margin*scaling - title_font_height * title_line_spacing*scaling)));  */
+}
 
 
 template <class T>
 Button<T>::Button(double x_0, double y_0, double font_size, string font_file_name, button_template<T> t, double margin, double space, double corner_r, COL button_c, COL p_button_c, COL margin_c, COL p_margin_c, COL font_c, COL p_font_c)
     : k(t.k), cb_fun(t.cb_fun), cb_ob(t.cb_ob), title(t.title), id(t.id), margin(margin), corner_r(corner_r), button_c(button_c), p_button_c(p_button_c), margin_c(margin_c), p_margin_c(p_margin_c), font_c(font_c), p_font_c(p_font_c), space(space), font_size(font_size), font_file_name(font_file_name)
 {
-    font = al_load_ttf_font(font_file_name.c_str(),font_size,0);
+    font = load_ttf_font(font_file_name,font_size,&font);
     double w = al_get_text_width(font,title.c_str());
     x0 = x_0;
     y0 = y_0;
-    x1 = x_0+w+2*space;
-    y1 = y_0+2*space+al_get_font_line_height(font);
+    x1 = x_0+w+2.0*space;
+    y1 = y_0+2.0*space+al_get_font_line_height(font);
     if(k==button_type::palette)
     {
         string message = "get";
@@ -911,9 +1088,9 @@ Button<T>::Button(double x_0, double y_0, double font_size, string font_file_nam
         /// translate the palette colour into hue bar and palette position
 
         // Create control buttons
-        button_template<T> pick (button_type::click,"Pick");
-        button_template<T> reset (button_type::click,"Reset");
-        button_template<T> deflt (button_type::click,"Default");
+        button_template<T> pick (button_type::click," Pick ");
+        button_template<T> reset (button_type::click," Reset ");
+        button_template<T> deflt (button_type::click," Default ");
 
         Pick = new Button<T>(x1,y0+2*space+palette_dim,font_size,font_file_name,pick,0.25*space,0.75*space,0.5*space,button_c,p_button_c,p_button_c,p_button_c,font_c,p_font_c);
         Reset = new Button<T>(x1,y0+2*space+palette_dim,font_size,font_file_name,reset,0.25*space,0.75*space,0.5*space,button_c,p_button_c,p_button_c,p_button_c,font_c,p_font_c);
@@ -939,7 +1116,7 @@ template <class T>
 Button<T>::Button(double x0, double y0, double x1, double y1, double font_size, string font_file_name, button_template<T> t, double margin, double space, double corner_r, COL button_c, COL p_button_c, COL margin_c, COL p_margin_c, COL font_c, COL p_font_c, COL tick_c)
     : Area(x0,y0,x1,y1,false), k(t.k), cb_fun(t.cb_fun), cb_ob(t.cb_ob), title(t.title), id(t.id), margin(margin), corner_r(corner_r), button_c(button_c), p_button_c(p_button_c), margin_c(margin_c), p_margin_c(p_margin_c), font_c(font_c), p_font_c(p_font_c), tick_c(tick_c), space(space), font_size(font_size), font_file_name(font_file_name)
 {
-    font = al_load_ttf_font(font_file_name.c_str(),font_size,0);
+    font = load_ttf_font(font_file_name,font_size,&font);
     if(k==button_type::palette)
     {
         string message = "get";
@@ -951,9 +1128,9 @@ Button<T>::Button(double x0, double y0, double x1, double y1, double font_size, 
 
 
         // Create control buttons
-        button_template<T> pick (button_type::click,"Pick");
-        button_template<T> reset (button_type::click,"Reset");
-        button_template<T> deflt (button_type::click,"Default");
+        button_template<T> pick (button_type::click," Pick ");
+        button_template<T> reset (button_type::click," Reset ");
+        button_template<T> deflt (button_type::click," Default ");
 
         Pick = new Button<T>(x1,y0+2*space+palette_dim,font_size,font_file_name,pick,0.25*space,0.75*space,0.5*space,button_c,p_button_c,p_button_c,p_button_c,font_c,p_font_c);
         Reset = new Button<T>(x1,y0+2*space+palette_dim,font_size,font_file_name,reset,0.25*space,0.75*space,0.5*space,button_c,p_button_c,p_button_c,p_button_c,font_c,p_font_c);
@@ -1006,9 +1183,9 @@ response_type Button<T>::respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt
         if(highlight)
         {
             double pal_x0 = x1;
-            double pal_x1 = x1+3*space+colourbar_w+palette_dim;
+            double pal_x1 = x1+(3*space+colourbar_w+palette_dim)*scaling;
             double pal_y0 = y0;
-            double pal_y1 = y0 + 3*space + palette_dim + (Pick->get_y1()-Pick->get_y0());
+            double pal_y1 = y0 + (3*space + palette_dim)*scaling + (Pick->get_y1()-Pick->get_y0());
             bool inside_whole_palette = mouse_inside(mouse_x,mouse_y) || (mouse_x<pal_x1 && mouse_x>pal_x0 && mouse_y<pal_y1 && mouse_y>pal_y0);
             if(palette_lock>-1 && highlight && evt==event_type::lmb_down && !inside_whole_palette) 
             {
@@ -1029,13 +1206,13 @@ response_type Button<T>::respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt
 
                 if(palette_lock<1)
                 {
-                    double palette_x0 = x1 + space;
-                    double palette_x1 = x1 + space + palette_dim;
-                    double palette_y0 = y0 + space;
-                    double palette_y1 = y0 + space + palette_dim;
+                    double palette_x0 = x1 + space*scaling;
+                    double palette_x1 = x1 + space*scaling + palette_dim*scaling;
+                    double palette_y0 = y0 + space*scaling;
+                    double palette_y1 = y0 + space*scaling + palette_dim*scaling;
 
-                    double huebar_x0 = palette_x1 + space;
-                    double huebar_x1 = palette_x1 + space + colourbar_w;
+                    double huebar_x0 = palette_x1 + space*scaling;
+                    double huebar_x1 = palette_x1 + space*scaling + colourbar_w*scaling;
                     double huebar_y0 = palette_y0;
                     double huebar_y1 = palette_y1;
 
@@ -1046,10 +1223,10 @@ response_type Button<T>::respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt
                     {
                         // Find palette position
                         palette_lock = 1;
-                        double palette_x0 = x1 + space;
-                        double palette_x1 = x1 + space + palette_dim;
-                        double palette_y0 = y0 + space;
-                        double palette_y1 = y0 + space + palette_dim;
+                        double palette_x0 = x1 + space*scaling;
+                        double palette_x1 = x1 + (space + palette_dim)*scaling;
+                        double palette_y0 = y0 + space*scaling;
+                        double palette_y1 = y0 + (space + palette_dim)*scaling;
                         if(mouse_x>palette_x1) palette_pos[0] = 0;
                         else if(mouse_x<palette_x0) palette_pos[0] = 1;
                         else palette_pos[0] = (mouse_x-palette_x1)/(palette_x0-palette_x1);
@@ -1070,10 +1247,10 @@ response_type Button<T>::respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt
                     {
                         // Find huebar position
                         palette_lock = 2;
-                        double huebar_x0 = x1 + space + palette_dim + space;
-                        double huebar_x1 = x1 + space + palette_dim + space + colourbar_w;
-                        double huebar_y0 = y0 + space;
-                        double huebar_y1 = y0 + space + palette_dim;
+                        double huebar_x0 = x1 + (space + palette_dim + space)*scaling;
+                        double huebar_x1 = x1 + (space + palette_dim + space + colourbar_w)*scaling;
+                        double huebar_y0 = y0 + space*scaling;
+                        double huebar_y1 = y0 + (space + palette_dim)*scaling;
                         if(mouse_y>huebar_y1) hue = 1;
                         else if(mouse_y<huebar_y0) hue = 0;
                         else hue = (mouse_y-huebar_y0)/(huebar_y1-huebar_y0);
@@ -1101,10 +1278,10 @@ response_type Button<T>::respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt
                     {
                         // Find palette position
                         palette_lock = 1;
-                        double palette_x0 = x1 + space;
-                        double palette_x1 = x1 + space + palette_dim;
-                        double palette_y0 = y0 + space;
-                        double palette_y1 = y0 + space + palette_dim;
+                        double palette_x0 = x1 + space*scaling;
+                        double palette_x1 = x1 + (space + palette_dim)*scaling;
+                        double palette_y0 = y0 + space*scaling;
+                        double palette_y1 = y0 + (space + palette_dim)*scaling;
                         if(mouse_x>palette_x1) palette_pos[0] = 0;
                         else if(mouse_x<palette_x0) palette_pos[0] = 1;
                         else palette_pos[0] = (mouse_x-palette_x1)/(palette_x0-palette_x1);
@@ -1127,10 +1304,10 @@ response_type Button<T>::respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt
                     if(evt==event_type::lmb_up) palette_lock = 0;
                     else if(evt==event_type::move_mouse)
                     {
-                        double huebar_x0 = x1 + space + palette_dim + space;
-                        double huebar_x1 = x1 + space + palette_dim + space + colourbar_w;
-                        double huebar_y0 = y0 + space;
-                        double huebar_y1 = y0 + space + palette_dim;
+                        double huebar_x0 = x1 + (space + palette_dim + space)*scaling;
+                        double huebar_x1 = x1 + (space + palette_dim + space + colourbar_w)*scaling;
+                        double huebar_y0 = y0 + space*scaling;
+                        double huebar_y1 = y0 + (space + palette_dim)*scaling;
                         if(mouse_y>huebar_y1) hue = 1;
                         else if(mouse_y<huebar_y0) hue = 0;
                         else hue = (mouse_y-huebar_y0)/(huebar_y1-huebar_y0);
@@ -1219,25 +1396,25 @@ void Button<T>::draw(ALLEGRO_DISPLAY * disp)
     double font_height = al_get_font_line_height(font);
     if(margin<=corner_r)
     {
-        al_draw_filled_rounded_rectangle(x0,y0,x1,y1,corner_r,corner_r,(highlight) ? p_margin_c : margin_c);
-        al_draw_filled_rounded_rectangle(x0+margin,y0+margin,x1-margin,y1-margin,corner_r-margin,corner_r-margin,(highlight) ? p_button_c : button_c);
+        al_draw_filled_rounded_rectangle(x0,y0,x1,y1,corner_r*scaling,corner_r*scaling,(highlight) ? p_margin_c : margin_c);
+        al_draw_filled_rounded_rectangle(x0+margin*scaling,y0+margin*scaling,x1-margin*scaling,y1-margin*scaling,(corner_r-margin)*scaling,(corner_r-margin)*scaling,(highlight) ? p_button_c : button_c);
     }
     else
     {
         al_draw_filled_rectangle(x0,y0,x1,y1,(highlight) ? p_margin_c : margin_c);
-        al_draw_filled_rectangle(x0+margin,y0+margin,x1-margin,y1-margin,(highlight) ? p_button_c : button_c);
+        al_draw_filled_rectangle(x0+margin*scaling,y0+margin*scaling,x1-margin*scaling,y1-margin*scaling,(highlight) ? p_button_c : button_c);
     }
-    if(k==button_type::principal_menu_root || k==button_type::click) al_draw_text(font,(highlight) ? p_font_c : font_c,x0+space,y0+space,0,title.c_str());
-    else al_draw_text(font,(highlight) ? p_font_c : font_c,x0+2*space+font_height,y0+space,0,title.c_str());
+    if(k==button_type::principal_menu_root || k==button_type::click) al_draw_text(font,(highlight) ? p_font_c : font_c,x0+space*scaling,y0+space*scaling,0,title.c_str());
+    else al_draw_text(font,(highlight) ? p_font_c : font_c,x0+2*space*scaling+font_height,y0+space*scaling,0,title.c_str());
 
     if(k==button_type::switcher && active) /// Draw tick if an active switcher
     {
         float v [8];
 
-        v[0] = x0+space;                    v[1] = y0+space+0.38*font_height;
-        v[2] = x0+space+0.38*font_height;   v[3] = y0+space+font_height;
-        v[4] = x0+space+font_height;        v[5] = y0+space;
-        v[6] = x0+space+0.38*font_height;   v[7] = y0+space+0.62*font_height;
+        v[0] = x0+space*scaling;                    v[1] = y0+space*scaling+0.38*font_height;
+        v[2] = x0+space*scaling+0.38*font_height;   v[3] = y0+space*scaling+font_height;
+        v[4] = x0+space*scaling+font_height;        v[5] = y0+space*scaling;
+        v[6] = x0+space*scaling+0.38*font_height;   v[7] = y0+space*scaling+0.62*font_height;
 
         al_draw_filled_polygon(v,4,tick_c);
     }
@@ -1245,51 +1422,117 @@ void Button<T>::draw(ALLEGRO_DISPLAY * disp)
     if(k==button_type::palette) /// Draw chosen colour if a palette
     {
         /// draw the palette colour  
-        al_draw_filled_rounded_rectangle(x1-1.25*space-font_height,y0+0.75*space,x1-0.75*space,y1-0.75*space,0.75*space,0.75*space,font_c);
-        al_draw_filled_rounded_rectangle(x1-space-font_height,y0+space,x1-space,y1-space,0.5*space,0.5*space,palette_c);
+        al_draw_filled_rounded_rectangle(x1-1.25*space*scaling-font_height,y0+0.75*space*scaling,x1-0.75*space*scaling,y1-0.75*space*scaling,0.75*space*scaling,0.75*space*scaling,font_c);
+        al_draw_filled_rounded_rectangle(x1-space*scaling-font_height,y0+space*scaling,x1-space*scaling,y1-space*scaling,0.5*space*scaling,0.5*space*scaling,palette_c);
 
         if(highlight)
         {
-            double total_height = 3*space+palette_dim+Pick->get_y1()-Pick->get_y0();
+            double total_height = 3*space*scaling+palette_dim*scaling+Pick->get_y1()-Pick->get_y0();
             // Draw the main square
-            al_draw_filled_rectangle(x1,y0,x1+2*space,y0+2*space,p_button_c);
-            al_draw_filled_rounded_rectangle(x1, y0, x1+3*space+palette_dim+colourbar_w, y0+total_height, space,space,p_button_c);
-            al_draw_filled_rounded_rectangle(x1+0.5*space, y0+0.5*space, x1+2.5*space+palette_dim+colourbar_w, y0+total_height-0.5*space, 0.5*space,0.5*space,font_c);
+            al_draw_filled_rectangle(x1,y0,x1+2*space*scaling,y0+2*space*scaling,p_button_c);
+            al_draw_filled_rounded_rectangle(x1, y0, x1+(3*space+palette_dim+colourbar_w)*scaling, y0+total_height, space*scaling,space*scaling,p_button_c);
+            al_draw_filled_rounded_rectangle(x1+0.5*space*scaling, y0+0.5*space*scaling, x1+(2.5*space+palette_dim+colourbar_w)*scaling, y0+total_height-0.5*space*scaling, 0.5*space*scaling,0.5*space*scaling,font_c);
             // Draw buttons
             Pick->draw(disp);
             Reset->draw(disp);
             Default->draw(disp);
 
             // Draw hue bar
-            al_draw_bitmap(huebar,x1+2*space+palette_dim,y0+space,0);
+            al_draw_bitmap(huebar,x1+(2*space+palette_dim)*scaling,y0+space*scaling,0);
 
             // Draw the hue bar selector
             COL hue_colour = hue_to_col(hue);
             float R, G, B;
             al_unmap_rgb_f(hue_colour,&R,&G,&B);
-            al_draw_filled_rounded_rectangle(x1+palette_dim+1.75*space,y0+space+palette_dim*hue-0.75*space,x1+palette_dim+2.25*space+colourbar_w,y0+space+palette_dim*hue+0.75*space,0.25*space,0.25*space,al_map_rgb(255,255,255));
-            al_draw_filled_rounded_rectangle(x1+palette_dim+1.95*space,y0+space+palette_dim*hue-0.55*space,x1+palette_dim+2.05*space+colourbar_w,y0+space+palette_dim*hue+0.55*space,0.10*space,0.10*space,hue_colour);
+            al_draw_filled_rounded_rectangle(x1+(palette_dim+1.75*space)*scaling,y0+(space+palette_dim*hue-0.75*space)*scaling,x1+(palette_dim+2.25*space+colourbar_w)*scaling,y0+(space+palette_dim*hue+0.75*space)*scaling,0.25*space*scaling,0.25*space*scaling,al_map_rgb(255,255,255));
+            al_draw_filled_rounded_rectangle(x1+(palette_dim+1.95*space)*scaling,y0+(space+palette_dim*hue-0.55*space)*scaling,x1+(palette_dim+2.05*space+colourbar_w)*scaling,y0+(space+palette_dim*hue+0.55*space)*scaling,0.10*space*scaling,0.10*space*scaling,hue_colour);
 
             // Draw the palette
+
             Nikal n;
-            for(int i=0;i<(int)palette_dim;i++)
+            for(int i=0;i<(int)(palette_dim*scaling);i++)
             {
-                double bl=(double)i/palette_dim;
-                n.add_gradient_line(x1+space,y0+space+i,x1+space+palette_dim,y0+space+i,al_map_rgb_f(1.0-bl,1.0-bl,1.0-bl),al_map_rgb_f((1.0-bl)*R,(1.0-bl)*G,(1.0-bl)*B),1);
-            }
-            n.draw();
+                double bl=(double)i/(palette_dim*scaling);
+                n.add_gradient_line(x1+space*scaling,y0+space*scaling+i,x1+(space+palette_dim)*scaling,y0+space*scaling+i,al_map_rgb_f(1.0-bl,1.0-bl,1.0-bl),al_map_rgb_f((1.0-bl)*R,(1.0-bl)*G,(1.0-bl)*B),1);
+            } 
+            n.draw(); 
 
             // Draw the palette picker
-            al_draw_filled_circle(x1+space+(1-palette_pos[0])*palette_dim,y0+space+palette_pos[1]*palette_dim,0.75*space,al_map_rgb(255,255,255)); 
-            al_draw_filled_circle(x1+space+(1-palette_pos[0])*palette_dim,y0+space+palette_pos[1]*palette_dim,0.60*space,palette_c); 
+            al_draw_filled_circle(x1+space*scaling+(1-palette_pos[0])*palette_dim*scaling,y0+space*scaling+palette_pos[1]*palette_dim*scaling,0.75*space*scaling,al_map_rgb(255,255,255)); 
+            al_draw_filled_circle(x1+space*scaling+(1-palette_pos[0])*palette_dim*scaling,y0+space*scaling+palette_pos[1]*palette_dim*scaling,0.60*space*scaling,palette_c); 
         }
     }
 
     if(k==button_type::menu_root) /// Draw arrow if an active menu
     {
-        al_draw_filled_triangle(x1-space-0.81*font_height,y0+space+0.19*font_height,x1-space-0.81*font_height,y1-space-0.19*font_height,x1-space-0.19*font_height,y0+0.5*(y1-y0),tick_c);
+        al_draw_filled_triangle(x1-space*scaling-0.81*font_height,y0+space*scaling+0.19*font_height,x1-space*scaling-0.81*font_height,y1-space*scaling-0.19*font_height,x1-space*scaling-0.19*font_height,y0+0.5*(y1-y0),tick_c);
     }
     if(highlight && menu!=NULL) menu->draw(disp);
+}
+
+template<class T>
+void Button<T>::set_scaling(double factor)
+{
+    scaling = factor; 
+
+    // First resize all the elements appropriately 
+    if(menu!=NULL) menu->set_scaling(scaling);
+
+    // Then shift them in place accordingly
+    double w = al_get_text_width(font,title.c_str());
+    x1 = x0+w+2.0*space*scaling;
+    y1 = y0+2.0*space*scaling+al_get_font_line_height(font);
+
+    if(k==button_type::menu_root) 
+    {
+        menu->shift(x1-menu->get_x0(), y0-menu->get_y0());
+    }
+    else if(k==button_type::principal_menu_root)
+    {
+        menu->shift(x0-menu->get_x0(), y1-menu->get_y0());
+    }
+    else if(k==button_type::palette) 
+    {
+        Pick->set_scaling(scaling);
+        Reset->set_scaling(scaling);
+        Default->set_scaling(scaling);
+
+        double total_width = scaling*(palette_dim + colourbar_w + 3*space);
+        Pick->shift((x1 + space*scaling)-Pick->get_x0(),
+            (y0+(2*space+palette_dim)*scaling)-Pick->get_y0());
+        Reset->shift((space*scaling + Pick->get_x1())-Reset->get_x0(),
+            Pick->get_y0()-Reset->get_y0());
+        Default->shift((x1+total_width - space*scaling - (Default->get_x1()-Default->get_x0()))-Default->get_x0(),
+            Pick->get_y0()-Default->get_y0());
+
+        /// Recreate huebar bitmap
+        al_destroy_bitmap(huebar);
+        huebar = al_create_bitmap(colourbar_w*scaling,palette_dim*scaling);
+        int numrows = (int)al_get_bitmap_height(huebar);
+        int numcols = (int)al_get_bitmap_width(huebar);
+        al_set_target_bitmap(huebar);
+        for(int i=0;i<numrows;i++) al_draw_line(0,i,numcols,i,hue_to_col((double)i/numrows),-1);
+
+        // Set palette parameters from the color
+        set_params_from_col();
+    }
+}
+
+template <class T>
+void Button<T>::Resize (double x_0, double y_0, double x_1, double y_1) 
+{ 
+    x0=x_0; y0=y_0; x1=x_1; y1=y_1;
+    if(menu!=NULL) menu->shift(x1-menu->get_x0(),y0-menu->get_y0());
+    if(Pick!=NULL && Reset!=NULL && Default!=NULL)
+    {
+        double total_width = scaling*(palette_dim + colourbar_w + 3*space);
+        Pick->shift((x1 + space*scaling)-Pick->get_x0(),
+            (y0+(2*space+palette_dim)*scaling)-Pick->get_y0());
+        Reset->shift((space*scaling + Pick->get_x1())-Reset->get_x0(),
+            Pick->get_y0()-Reset->get_y0());
+        Default->shift((x1+total_width - space*scaling - (Default->get_x1()-Default->get_x0()))-Default->get_x0(),
+            Pick->get_y0()-Default->get_y0());
+    }
 }
 
 template <class T>
@@ -1310,6 +1553,9 @@ void Button<T>::shift(double dx,double dy)
     x1+=dx;
     y1+=dy;
     if(menu!=NULL) menu->shift(dx,dy);
+    if(Pick!=NULL) Pick->shift(dx,dy);
+    if(Reset!=NULL) Reset->shift(dx,dy);
+    if(Default!=NULL) Default->shift(dx,dy);     
 }
 
 template <class T>
@@ -1375,7 +1621,7 @@ void Button<T>::send_colour()
         string s = to_string(n);
         if(s.length()==1) return "00"+s;
         else if(s.length()==2) return "0"+s;
-        else if(s.length()==3) return s;
+        else return s;
     };
     auto conv = [&lengthen] (COL &c)
     {
@@ -1391,11 +1637,12 @@ template <class T>
 Text_input<T>::Text_input(double x_0, double y_0, double x_1, string font_file_name, text_inp_template<T> t, graphics g, bool switchable, bool persistent)
     : cb_ob(t.cb_ob), switchable(switchable), persistent(persistent), title(t.title), id(t.id), g(g), font_file_name(font_file_name)
 {
-    font = al_load_ttf_font(font_file_name.c_str(),g.font_size,0);
+    font = load_ttf_font(font_file_name,g.font_size,&font);
     double w = al_get_text_width(font,title.c_str());
     x0 = x_0; y0 = y_0; x1 = x_1; y1 = y_0+2*g.space+al_get_font_line_height(font);
     double box_space = 0.5*(y1-y0-al_get_font_line_height(font));
     box_x0 = x0 + 2*g.space + w; box_y0 = y0 + box_space - g.box_margin; box_x1 = x1 - g.space; box_y1 = y1 - box_space + g.box_margin;
+    input_w = box_x1-box_x0;
 
 	if (t.cb_fun1 != NULL) cb_fun1 = t.cb_fun1;
 	else if (t.cb_fun2 != NULL)
@@ -1405,8 +1652,10 @@ Text_input<T>::Text_input(double x_0, double y_0, double x_1, string font_file_n
 		with_list = true;
 		list_space = min(g.space, box_space);
 		vector<string> str;
-		t_view = new Text_view<Text_input>(box_x0 + g.box_margin, y1+list_space, box_x0 + g.box_margin + t.width, y1 + list_space + t.max_h, true, str, 0, 0, al_map_rgb(255, 255, 255), t.max_h, &Text_input::respond_to_list, this, t.id);
-	}
+		t_view = new Text_view<Text_input>(box_x0 + g.box_margin, y1+list_space, box_x0 + g.box_margin + t.width, y1 + list_space + t.max_h, true, str, g.font_size, g.font_size, 0, 0, al_map_rgb(255, 255, 255), t.max_h, &Text_input::respond_to_list, this, t.id);
+        text_view_w = t.width;
+        text_max_h = t.max_h;
+    }
 
 	if (!switchable) high();
 }
@@ -1597,7 +1846,7 @@ void Text_input<T>::draw(ALLEGRO_DISPLAY * disp)
 
 	if (draw_list)
 	{
-		t_view->Resize(box_x0 + g.box_margin, t_view->get_y0(), box_x0 + g.box_margin + t_view->get_x1() - t_view->get_x0(), t_view->get_y1());
+		t_view->Resize(box_x0 + g.box_margin*scaling, t_view->get_y0(), box_x0 + g.box_margin*scaling + t_view->get_x1() - t_view->get_x0(), t_view->get_y1());
 		double delta = max(t_view->get_x1() - al_get_display_width(disp) + t_view->get_scroll_w()*1.61,0.0);
 		if (delta > 0) t_view->Resize(t_view->get_x0()-delta, t_view->get_y0(), t_view->get_x1()-delta, t_view->get_y1());
 		t_view->check_height(disp);
@@ -1606,45 +1855,45 @@ void Text_input<T>::draw(ALLEGRO_DISPLAY * disp)
     /// Draw input background
     if(g.margin<=g.corner_r)
     {
-        al_draw_filled_rounded_rectangle(x0,y0,x1,y1,g.corner_r,g.corner_r,(highlight) ? g.p_margin_c : g.margin_c);
+        al_draw_filled_rounded_rectangle(x0,y0,x1,y1,g.corner_r*scaling,g.corner_r*scaling,(highlight) ? g.p_margin_c : g.margin_c);
 		if (draw_list)
 		{
-			al_draw_filled_rectangle(max(t_view->get_x0() - list_space,x0), y1- g.corner_r, min(x1, t_view->get_x1() + list_space) , y1+g.corner_r, (highlight) ? g.p_margin_c : g.margin_c);
-			al_draw_filled_rounded_rectangle(t_view->get_x0()-list_space, y1, t_view->get_x1() + list_space, t_view->get_y1() + list_space, g.corner_r, g.corner_r, (highlight) ? g.p_margin_c : g.margin_c);
+			al_draw_filled_rectangle(max(t_view->get_x0() - list_space*scaling,x0), y1- g.corner_r*scaling, min(x1, t_view->get_x1() + list_space*scaling) , y1+g.corner_r*scaling, (highlight) ? g.p_margin_c : g.margin_c);
+			al_draw_filled_rounded_rectangle(t_view->get_x0()-list_space*scaling, y1, t_view->get_x1() + list_space*scaling, t_view->get_y1() + list_space*scaling, g.corner_r*scaling, g.corner_r*scaling, (highlight) ? g.p_margin_c : g.margin_c);
 		}
-        al_draw_filled_rounded_rectangle(x0+g.margin,y0+g.margin,x1-g.margin,y1-g.margin,g.corner_r-g.margin,g.corner_r-g.margin, (highlight) ? g.p_backgr_c : g.backgr_c);
+        al_draw_filled_rounded_rectangle(x0+g.margin*scaling,y0+g.margin*scaling,x1-g.margin*scaling,y1-g.margin*scaling,(g.corner_r-g.margin)*scaling,(g.corner_r-g.margin)*scaling, (highlight) ? g.p_backgr_c : g.backgr_c);
 		if (draw_list)
 		{
-			al_draw_filled_rounded_rectangle(t_view->get_x0() - list_space + g.margin, y1 + g.margin, t_view->get_x1() + list_space - g.margin, t_view->get_y1() + list_space - g.margin, g.corner_r - g.margin, g.corner_r - g.margin, (highlight) ? g.p_backgr_c : g.backgr_c);
-			al_draw_filled_rectangle(max(t_view->get_x0() - list_space, x0) + g.margin, y1 - g.corner_r, min(x1, t_view->get_x1() + list_space) - g.margin, t_view->get_y0() - list_space + g.corner_r + g.margin, (highlight) ? g.p_backgr_c : g.backgr_c);
+			al_draw_filled_rounded_rectangle(t_view->get_x0() - list_space*scaling + g.margin*scaling, y1 + g.margin*scaling, t_view->get_x1() + list_space*scaling - g.margin*scaling, t_view->get_y1() + (list_space - g.margin)*scaling, (g.corner_r - g.margin)*scaling, (g.corner_r - g.margin)*scaling, (highlight) ? g.p_backgr_c : g.backgr_c);
+			al_draw_filled_rectangle(max(t_view->get_x0() - list_space*scaling, x0) + g.margin*scaling, y1 - g.corner_r*scaling, min(x1, t_view->get_x1() + list_space*scaling) - g.margin*scaling, t_view->get_y0() - list_space*scaling + (g.corner_r + g.margin)*scaling, (highlight) ? g.p_backgr_c : g.backgr_c);
 		}
     }
     else
     {
         al_draw_filled_rectangle(x0,y0,x1,y1,(highlight) ? g.p_margin_c : g.margin_c);
-        al_draw_filled_rectangle(x0+g.margin,y0+g.margin,x1-g.margin,y1-g.margin, (highlight) ? g.p_backgr_c : g.backgr_c);
+        al_draw_filled_rectangle(x0+g.margin*scaling,y0+g.margin*scaling,x1-g.margin*scaling,y1-g.margin*scaling, (highlight) ? g.p_backgr_c : g.backgr_c);
     }
 
     /// Draw title
-    al_draw_text(font,(highlight) ? g.p_title_c : g.title_c,x0+g.space,y0+g.space,0,title.c_str());
+    al_draw_text(font,(highlight) ? g.p_title_c : g.title_c,x0+g.space*scaling,y0+g.space*scaling,0,title.c_str());
 
     /// Draw box background
-    if(g.box_margin<=g.box_corner_r) al_draw_filled_rounded_rectangle(box_x0,box_y0,box_x1,box_y1,g.box_corner_r-g.box_margin,g.box_corner_r-g.box_margin,(stat== unknown) ? g.box_backgr_c : (stat==valid) ? valid_c : invalid_c);
+    if(g.box_margin<=g.box_corner_r) al_draw_filled_rounded_rectangle(box_x0,box_y0,box_x1,box_y1,(g.box_corner_r-g.box_margin)*scaling,(g.box_corner_r-g.box_margin)*scaling,(stat== unknown) ? g.box_backgr_c : (stat==valid) ? valid_c : invalid_c);
 	else al_draw_filled_rectangle(box_x0, box_y0, box_x1, box_y1, (stat == unknown) ? g.box_backgr_c : (stat == valid) ? valid_c : invalid_c);
 
 
     /// Draw text
     double w = al_get_text_width(font,content.c_str());
-    double free_box_w = box_x1-box_x0-2*max(g.box_margin,g.box_corner_r);
-    double text_tab = max(g.box_margin,g.box_corner_r);
+    double free_box_w = box_x1-box_x0-2*max(g.box_margin,g.box_corner_r)*scaling;
+    double text_tab = max(g.box_margin,g.box_corner_r)*scaling;
     if(w<free_box_w)
     {
-        al_draw_text(font,g.inp_c,box_x0+text_tab,y0+g.space,0,content.c_str());
+        al_draw_text(font,g.inp_c,box_x0+text_tab,y0+g.space*scaling,0,content.c_str());
     }
     else
     {
         al_set_clipping_rectangle(box_x0+text_tab,box_y0,free_box_w,box_y1);
-        al_draw_text(font,g.inp_c,box_x1-text_tab,y0+g.space,ALLEGRO_ALIGN_RIGHT,content.c_str());
+        al_draw_text(font,g.inp_c,box_x1-text_tab,y0+g.space*scaling,ALLEGRO_ALIGN_RIGHT,content.c_str());
         al_set_clipping_rectangle(0,0,al_get_bitmap_width(al_get_backbuffer(disp)),al_get_bitmap_height(al_get_backbuffer(disp)));
     }
 
@@ -1660,16 +1909,53 @@ void Text_input<T>::draw(ALLEGRO_DISPLAY * disp)
     /// Draw margin around text input area
     if(g.box_margin<=g.box_corner_r)
     {
-        al_draw_rounded_rectangle(box_x0,box_y0,box_x1,box_y1,g.box_corner_r,g.box_corner_r,(highlight) ? g.margin_c : g.p_margin_c,g.box_margin);
+        al_draw_rounded_rectangle(box_x0,box_y0,box_x1,box_y1,g.box_corner_r*scaling,g.box_corner_r*scaling,(highlight) ? g.margin_c : g.p_margin_c,g.box_margin*scaling);
     }
     else
     {
-        al_draw_rectangle(box_x0,box_y0,box_x1,box_y1,(highlight) ? g.margin_c : g.p_margin_c,g.box_margin);
+        al_draw_rectangle(box_x0,box_y0,box_x1,box_y1,(highlight) ? g.margin_c : g.p_margin_c,g.box_margin*scaling);
     }
 
 	// Draw list
 
 	if (draw_list) t_view->draw(disp);
+}
+
+template<class T>
+void Text_input<T>::set_scaling(double factor)
+{
+    scaling = factor; 
+
+    y1 = y0+2*g.space*scaling+al_get_font_line_height(font);
+    
+    double w = al_get_text_width(font,title.c_str());
+    double box_space = 0.5*(y1-y0-al_get_font_line_height(font));
+
+    x1 = x0 + w + (input_w+3*g.space)*scaling;
+
+    box_x0 = x0 + 2*g.space*scaling + w; 
+    box_y0 = y0 + box_space - g.box_margin*scaling; 
+    box_x1 = x1 - g.space*scaling;
+    box_y1 = y1 - box_space + g.box_margin*scaling;
+
+    if(t_view!=NULL) 
+    {
+        t_view->set_scaling(scaling);
+        //t_view->shift(box_x0 + g.box_margin*scaling-t_view->get_x0(),y1 + list_space*scaling - t_view->get_y0());
+        t_view->Resize(box_x0 + g.box_margin*scaling, y1 + list_space*scaling, box_x0 + g.box_margin*scaling + text_view_w*(0.5*(scaling-1.0)+1.0), y1 + list_space*scaling + text_max_h*(0.5*(scaling-1.0)+1.0));
+    }
+}
+
+template<class T>
+void Text_input<T>::Resize(double x_0, double y_0, double x_1, double y_1) 
+{
+    x0 = x_0; x1 = x_1; y0 = y_0; y1 = y_1;
+    double w = al_get_text_width(font,title.c_str());
+    double box_space = 0.5*(y1-y0-al_get_font_line_height(font));
+    box_x0 = x0 + 2*g.space*scaling + w; 
+    box_y0 = y0 + box_space - g.box_margin*scaling; 
+    box_x1 = x1 - g.space*scaling;
+    box_y1 = y1 - box_space + g.box_margin*scaling;
 }
 
 template <class T>
@@ -1739,7 +2025,9 @@ void Input_list<T>::button_response(int n, string &s)
 			text_inp_template<T> temp = t[i];
 			temp.id = cur_size;
 			inputs.push_back(new Text_input<T>(pos_x, y1 - (add->get_y1() - add->get_y0()), pos_x + widths[i], font_file_name, temp, g, true, true));
-			pos_x += widths[i];
+			inputs.back()->set_scaling(scaling);
+            inputs.back()->Resize(pos_x, y1 - (add->get_y1() - add->get_y0()), pos_x + widths[i]*scaling, inputs.back()->get_y1());
+            pos_x += widths[i]*scaling;
 		}
 		y1 += inputs.back()->get_y1() - inputs.back()->get_y0();
 		add->shift(0, inputs.back()->get_y1() - inputs.back()->get_y0());
@@ -1818,8 +2106,46 @@ void Input_list<T>::draw(ALLEGRO_DISPLAY * disp)
 		if (iter == input_lock) i->draw(disp);
 		iter++;
 	}
-
 }
+
+template<class T>
+void Input_list<T>::set_scaling(double factor)
+{
+    scaling = factor;
+
+    add->set_scaling(scaling);
+    remove->set_scaling(scaling);
+    int iter = 0;
+    for(size_t i=0;i<(inputs.size()/t.size());i++) 
+    {
+        for (size_t j=0;j<t.size();j++)
+        {
+            inputs[iter]->set_scaling(scaling);
+            inputs[iter]->Resize(0, inputs[iter]->get_y0(), widths[j]*scaling, inputs[iter]->get_y1());
+            iter++;
+        }
+    }
+
+    y1 = 0;
+    double pos_y = y0;
+    iter = 0;
+    for(size_t i=0;i<(inputs.size()/t.size());i++)
+    {
+        double pos_x = x0;
+        for (size_t j=0;j<t.size();j++)
+        {
+            inputs[iter]->shift(pos_x-inputs[iter]->get_x0(),pos_y-inputs[iter]->get_y0());
+            pos_x += inputs[iter]->get_x1()-inputs[iter]->get_x0();
+            iter++;
+        }
+        pos_y=inputs[iter-1]->get_y1();
+    }
+    x1 = x0;
+    for(const auto &i:widths) x1+=i*scaling;
+    add->Resize(x0,pos_y,0.5*(x0 + x1),pos_y+add->get_y1()-add->get_y0());
+    remove->Resize(0.5*(x0 + x1), pos_y, x1 , pos_y+remove->get_y1()-remove->get_y0());
+    y1 = add->get_y1();
+}   
 
 template <class T>
 void Input_list<T>::shift(double dx, double dy)
@@ -1846,11 +2172,11 @@ Menu<T>::Menu(vector<button_template<T> > b_temps,double x_0, double y_0)
 {
     x0 = x_0;
     y0 = y_0;
-    FONT * font = al_load_ttf_font(font_file_name.c_str(),font_size,0);
+    FONT * font = load_ttf_font(font_file_name,font_size,&font);
     double font_height = al_get_font_line_height(font);
     double max_w = 0;
     for(auto &i:b_temps) max_w = max((double)al_get_text_width(font,i.title.c_str()),max_w);
-    if(font!=NULL) al_destroy_font(font);
+    attempt_destroy_font(font_file_name,font_size,&font);
     x1 = x_0 + max_w + 4*space + 2*font_height;
     y1 = y_0 + b_temps.size()*(2*space+font_height);
 
@@ -1908,8 +2234,39 @@ template <class T>
 void Menu<T>::draw(ALLEGRO_DISPLAY * disp)
 {
     al_set_target_backbuffer(disp);
-    al_draw_rectangle(x0,y0,x1,y1,margin_c,margin);
+    al_draw_rectangle(x0,y0,x1,y1,margin_c,margin*scaling);
     for(auto &i:buttons) i->draw(disp);
+}
+
+template<class T>
+void Menu<T>::set_scaling(double factor)
+{
+    scaling = factor; 
+
+    // First resize all the elements appropriately 
+    for(auto& i:buttons) i->set_scaling(scaling);
+
+    // Then shift them in place accordingly
+    double font_height = 0;
+    if(buttons.size()>0) font_height = al_get_font_line_height(buttons.front()->get_font());
+
+    double max_w = 0;
+    for(auto &i:buttons) max_w = max((double)al_get_text_width(i->get_font(),i->get_title().c_str()),max_w);
+    x1 = x0 + max_w + scaling*4*space + 2*font_height;
+
+    double pos_x = x0;
+    double pos_y = y0;
+
+   // int iter = 0;
+    for(auto &i:buttons) 
+    {
+      //  i->shift(pos_x-i->get_x0(),pos_y-i->get_y0());
+        i->Resize(x0,pos_y,x1,pos_y+i->get_y1()-i->get_y0());
+        pos_y+=i->get_y1()-i->get_y0();
+     //   iter++;
+    }
+
+    y1 = buttons.size()*(scaling*2*space+font_height);
 }
 
 template <class T>
@@ -1922,7 +2279,7 @@ void Menu<T>::unhighlight()
 template <class T>
 void Menu<T>::shift(double dx,double dy)
 {
-        x0+=dx;
+    x0+=dx;
     y0+=dy;
     x1+=dx;
     y1+=dy;
@@ -1967,13 +2324,13 @@ Panel<T>::Panel(double x_0, double y_0, double x_1, bool on, vector<button_templ
     g.inp_c = inp_font_c;
     g.bar_c = inp_bar_c;
 
-    FONT * font = al_load_ttf_font(font_file_name.c_str(),font_size,0);
+    FONT * font = load_ttf_font(font_file_name,font_size,&font);
     for(auto &i:tex)
     {
         text_inputs.push_back(new Text_input<T>(pos_x,pos_y,pos_x+text_inp_width+3*space+al_get_text_width(font,i.title.c_str()),font_file_name,i,g,true,true));
         pos_x+=text_inputs.back()->get_x1()-text_inputs.back()->get_x0();
     }
-    if(font!=NULL) al_destroy_font(font);
+    attempt_destroy_font(font_file_name,font_size,&font);
 
     double but_y = 0; double tex_y = 0;
     if(!buttons.empty()) but_y=buttons[0]->get_y1()-buttons[0]->get_y0();
@@ -2100,13 +2457,44 @@ void Panel<T>::draw(ALLEGRO_DISPLAY * disp)
 {
     al_set_target_backbuffer(disp);
     al_draw_filled_rectangle(x0,y0,x1,y1,background_c);
-    al_draw_filled_rectangle(x0,y0,x0+h_margin,y1,panel_margin_c);
-    al_draw_filled_rectangle(x1-h_margin,y0,x1,y1,panel_margin_c);
-    al_draw_filled_rectangle(x0,y0,x1,y0+v_margin,panel_margin_c);
-    al_draw_filled_rectangle(x0,y1-v_margin,x1,y1,panel_margin_c);
+    al_draw_filled_rectangle(x0,y0,x0+scaling*h_margin,y1,panel_margin_c);
+    al_draw_filled_rectangle(x1-scaling*h_margin,y0,x1,y1,panel_margin_c);
+    al_draw_filled_rectangle(x0,y0,x1,y0+scaling*v_margin,panel_margin_c);
+    al_draw_filled_rectangle(x0,y1-scaling*v_margin,x1,y1,panel_margin_c);
 
     for(auto& i:buttons) i->draw(disp);
     for(auto& i:text_inputs) i->draw(disp);
+}
+
+template<class T>
+void Panel<T>::set_scaling(double factor)
+{
+    scaling = factor; 
+
+    // First resize all the elements appropriately 
+    for(auto& i:buttons) i->set_scaling(scaling);
+    for(auto& i:text_inputs) i->set_scaling(scaling);
+
+    // Then shift them in place accordingly
+    double pos_x = x0+h_margin*scaling;
+    double pos_y = y0+v_margin*scaling;
+
+    for(auto &i:buttons) 
+    {
+        i->shift(pos_x-i->get_x0(),pos_y-i->get_y0());
+        pos_x+=i->get_x1()-i->get_x0();
+    }
+    for(auto &i:text_inputs) 
+    {
+        i->shift(pos_x-i->get_x0(),pos_y-i->get_y0());
+        pos_x+=i->get_x1()-i->get_x0();
+    }
+
+    double but_y = 0; double tex_y = 0;
+    if(!buttons.empty()) but_y=buttons[0]->get_y1()-buttons[0]->get_y0();
+    if(!text_inputs.empty()) tex_y=text_inputs[0]->get_y1()-text_inputs[0]->get_y0();
+
+    y1=y0+2*scaling*v_margin+max(but_y,tex_y);
 }
 
 Resize_bar::Resize_bar(vector<Area *> areas,vector<int> dims) : areas(areas), dims(dims)
@@ -2295,9 +2683,9 @@ void Resize_bar::fit()
                 y0s.push_back(get_dim(1,areas[i]));
                 y1s.push_back(get_dim(3,areas[i]));
             }
-            x0 = val-0.5*width;
+            x0 = val-0.5*width*scaling;
             y0 = *min_element(y0s.begin(),y0s.end());
-            x1 = val+0.5*width;
+            x1 = val+0.5*width*scaling;
             y1 = *max_element(y1s.begin(),y1s.end());
         }
         else /// horizontal
@@ -2311,12 +2699,17 @@ void Resize_bar::fit()
                 x1s.push_back(get_dim(2,areas[i]));
             }
             x0 = *min_element(x0s.begin(),x0s.end());
-            y0 = val-0.5*width;
+            y0 = val-0.5*width*scaling;
             x1 = *max_element(x1s.begin(),x1s.end());
-            y1 = val+0.5*width;
+            y1 = val+0.5*width*scaling;
         }
     }
     else printf("\n\nERROR!!! The dimensions of your Areas in Resize_bar::fit are not equal!!\n\n");
+}
+
+void Resize_bar::set_scaling(double factor)
+{
+    scaling = factor;
 }
 
 Custom::Custom(double x0, double y0, double x1, double y1, bool on) : Area(x0,y0,x1,y1,on) {}
@@ -2388,11 +2781,13 @@ response_type Custom::respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt,do
 void Custom::draw(ALLEGRO_DISPLAY * disp)
 {
     al_set_target_backbuffer(disp);
-    al_draw_filled_rectangle(x0,y0,x0+h_margin,y1,margin_c);
-    al_draw_filled_rectangle(x1-h_margin,y0,x1,y1,margin_c);
-    al_draw_filled_rectangle(x0,y0,x1,y0+v_margin,margin_c);
-    al_draw_filled_rectangle(x0,y1-v_margin,x1,y1,margin_c);
+    al_draw_filled_rectangle(x0,y0,x0+h_margin*scaling,y1,margin_c);
+    al_draw_filled_rectangle(x1-h_margin*scaling,y0,x1,y1,margin_c);
+    al_draw_filled_rectangle(x0,y0,x1,y0+v_margin*scaling,margin_c);
+    al_draw_filled_rectangle(x0,y1-v_margin*scaling,x1,y1,margin_c);
 }
+
+void Custom::set_scaling(double factor) { scaling = factor; };
 
 template <class T>
 Window<T>::Window(ALLEGRO_DISPLAY* disp,vector<button_template<T> > buttons,vector<text_inp_template<T> > text_inputs, vector<string> ititles, vector<inp_view_template<T> > itemplates) : disp(disp)
@@ -2532,7 +2927,7 @@ bool Window<T>::apply_current_mode()
 	else if (mode == edit_compart) return ecompart_view->apply();
 	else if (mode == add_spec) return aspec_view->apply();
 	else if (mode == add_reac) return areac_view->apply();
-	else if (mode == add_compart) return acompart_view->apply();
+	else return acompart_view->apply();
 }
 
 template <class T>
@@ -2541,12 +2936,28 @@ void Window<T>::draw()
     al_set_target_backbuffer(disp);
     for(size_t i=1;i<areas.size();i++) if(areas[i]->is_on()) areas[i]->draw(disp);
     areas[0]->draw(disp);
-    al_draw_filled_rectangle(0,size_y-l_margin,size_x,size_y,margin_c);
+    al_draw_filled_rectangle(0,size_y-l_margin*scaling,size_x,size_y,margin_c);
+}
+
+template <class T>
+void Window<T>::set_scaling(double factor)
+{
+    scaling = factor;
+    for(auto &i:areas) i->set_scaling(scaling);
+    panel_h = panel->get_y1()-panel->get_y0();
+
+    custom->Resize(custom->get_x0(),panel_h,custom->get_x1(),size_y-l_margin*scaling);
+    t_view->Resize(t_view->get_x0(),panel_h,t_view->get_x1(),size_y-l_margin*scaling);
+    espec_view->Resize(espec_view->get_x0(),panel_h,espec_view->get_x1(),size_y-l_margin*scaling);
+    ereac_view->Resize(ereac_view->get_x0(),panel_h,ereac_view->get_x1(),size_y-l_margin*scaling);
+    ecompart_view->Resize(ecompart_view->get_x0(),panel_h,ecompart_view->get_x1(),size_y-l_margin*scaling);
+    aspec_view->Resize(aspec_view->get_x0(),panel_h,aspec_view->get_x1(),size_y-l_margin*scaling);
+    areac_view->Resize(areac_view->get_x0(),panel_h,areac_view->get_x1(),size_y-l_margin*scaling);
+    acompart_view->Resize(acompart_view->get_x0(),panel_h,acompart_view->get_x1(),size_y-l_margin*scaling);
 }
 
 
-
-Filehandler::Filehandler(ALLEGRO_DISPLAY * disp, mode mod, action * act, string * file_name) : mod(mod), act(act), file_name(file_name), disp(disp)
+Filehandler::Filehandler(ALLEGRO_DISPLAY * disp, mode mod, action * act, string * file_name, double scaling) : mod(mod), act(act), file_name(file_name), disp(disp), scaling(scaling)
 {
     *act = none;
     d_width = al_get_display_width(disp);
@@ -2558,7 +2969,7 @@ Filehandler::Filehandler(ALLEGRO_DISPLAY * disp, mode mod, action * act, string 
     string button_name = (mod==open) ? "Open file" : (mod==save_as) ? "Save file as" : "Random shit";
     int n = (mod==open) ? 1 : (mod==save_as) ? 2 : 3;
     button_template<Filehandler> doit_templ(button_type::click,&Filehandler::do_file_action,this,button_name,n);
-    areas.push_back(new Button<Filehandler>(d_width,d_height,font_size,font_file_name,doit_templ,but_margin,but_space,but_corner_r,button_c,p_button_c,margin_c,p_margin_c,font_c,p_font_c));
+    areas.push_back(new Button<Filehandler>(d_width,d_height,scaling*font_size,font_file_name,doit_templ,scaling*but_margin,scaling*but_space,scaling*but_corner_r,button_c,p_button_c,margin_c,p_margin_c,font_c,p_font_c));
     doit = static_cast<Button<Filehandler> *>(areas.back());
 
     button_y0 = button_y1 - 1.62*(doit->get_y1()-doit->get_y0());
@@ -2570,7 +2981,7 @@ Filehandler::Filehandler(ALLEGRO_DISPLAY * disp, mode mod, action * act, string 
     doit->shift(dx,dy);
 
     button_template<Filehandler> canc_templ(button_type::click,&Filehandler::do_file_action,this,"Cancel",-1);
-    areas.push_back(new Button<Filehandler>(button_split_x,d_height,font_size,font_file_name,canc_templ,but_margin,but_space,but_corner_r,button_c,p_button_c,margin_c,p_margin_c,font_c,p_font_c));
+    areas.push_back(new Button<Filehandler>(button_split_x,d_height,scaling*font_size,font_file_name,canc_templ,scaling*but_margin,scaling*but_space,scaling*but_corner_r,button_c,p_button_c,margin_c,p_margin_c,font_c,p_font_c));
     canc = static_cast<Button<Filehandler> *>(areas.back());
     dx = -(canc->get_x1()-canc->get_x0()) - delta;
     dy = -(canc->get_y1()-canc->get_y0()) - delta;
@@ -2579,12 +2990,12 @@ Filehandler::Filehandler(ALLEGRO_DISPLAY * disp, mode mod, action * act, string 
     text_inp_template<Filehandler> inp_templ(&Filehandler::receive_text,this,"Name:",1);
 
     Text_input<Filehandler>::graphics g;
-    g.margin = inp_margin;
-    g.corner_r = 0;
-    g.box_margin = inp_margin;
-    g.box_corner_r = inp_corner_r;
-    g.space = inp_space;
-    g.font_size = font_size;
+    g.margin = scaling*inp_margin;
+    g.corner_r = scaling*0;
+    g.box_margin = scaling*inp_margin;
+    g.box_corner_r = scaling*inp_corner_r;
+    g.space = scaling*inp_space;
+    g.font_size = scaling*font_size;
 
     g.backgr_c = button_c;
 	g.p_backgr_c = p_button_c;
@@ -2687,7 +3098,7 @@ void Filehandler::change_folder(string folder_path)
 
     if(t_view==NULL)
     {
-        areas.push_back(new Text_view<Filehandler>(0, text_y0, d_width, text_y1, true, str, text_v_margin, text_h_margin, margin_c,-1.0,&Filehandler::click_folder,this,0));
+        areas.push_back(new Text_view<Filehandler>(0, text_y0, d_width, text_y1, true, str, scaling*font_size, scaling*font_size, scaling*text_v_margin, scaling*text_h_margin, margin_c,-1.0,&Filehandler::click_folder,this,0));
         t_view = static_cast<Text_view<Filehandler> *>(areas.back());
     }
     else t_view->Change_text(str);
@@ -2820,7 +3231,7 @@ void Filehandler::receive_text(int n, string &s)
 	}
 }
 
-Warning::Warning(ALLEGRO_EVENT_QUEUE * event_queue, string message, vector<string> b_text, int * action) : action(action)
+Warning::Warning(ALLEGRO_EVENT_QUEUE * event_queue, string message, vector<string> b_text, int * action, double scaling) : action(action)
 {
     if(b_text.empty()) b_text.push_back("Thou didst not give me buttons, o silly person!");
 
@@ -2828,12 +3239,12 @@ Warning::Warning(ALLEGRO_EVENT_QUEUE * event_queue, string message, vector<strin
     al_pause_event_queue(event_queue,true);
     al_flush_event_queue(event_queue);
 
-    FONT * font = al_load_ttf_font(font_file_name.c_str(),font_size,0);
+    FONT * font = load_ttf_font(font_file_name,font_size*scaling,&font);
 
     for(int i=0;i<(int)b_text.size();i++)
     {
         button_template<Warning> templ(button_type::click,&Warning::do_action,this,b_text[i],i);
-        buttons.push_back(new Button<Warning>(0,0,but_font_size,font_file_name,templ,but_margin,but_space,but_corner_r,button_c,p_button_c,margin_c,p_margin_c,font_c,p_font_c));
+        buttons.push_back(new Button<Warning>(0,0,but_font_size*scaling,font_file_name,templ,but_margin*scaling,but_space*scaling,but_corner_r*scaling,button_c,p_button_c,margin_c,p_margin_c,font_c,p_font_c));
     }
 
     /// Decide on margins
@@ -2845,7 +3256,7 @@ Warning::Warning(ALLEGRO_EVENT_QUEUE * event_queue, string message, vector<strin
     /// Find warning height and width
     double but_width = delta;
     for(auto &i:buttons) but_width+=i->get_x1()-i->get_x0()+delta;
-    double d_width = min(res_x,max(but_width,2*delta+(double)al_get_text_width(font,message.c_str())));
+    double d_width = max(but_width,2*delta+(double)al_get_text_width(font,message.c_str()));
 
     int num_lines = 0;
     string temp_mes = message;
@@ -2982,7 +3393,7 @@ Warning::Warning(ALLEGRO_EVENT_QUEUE * event_queue, string message, vector<strin
         }
     }
 
-    if(font!=NULL) al_destroy_font(font);
+    attempt_destroy_font(font_file_name,font_size,&font);
     if(textmap!=NULL) al_destroy_bitmap(textmap);
     if(disp!=NULL) al_destroy_display(disp);
     if(tim!=NULL) al_destroy_timer(tim);

@@ -27,7 +27,7 @@ Explorer::Explorer(string filename, const set<string> &flags, double res_X, doub
 		loaded = load_FBA_model(filename);
 	}
 
-	al_set_new_display_option(ALLEGRO_SAMPLE_BUFFERS, 2, ALLEGRO_SUGGEST);
+	al_set_new_display_option(ALLEGRO_SAMPLE_BUFFERS, 1, ALLEGRO_SUGGEST);
 	al_set_new_display_option(ALLEGRO_SAMPLES, 4, ALLEGRO_SUGGEST);
 
 	int dis_num = al_get_num_video_adapters();
@@ -115,16 +115,34 @@ Explorer::Explorer(string filename, const set<string> &flags, double res_X, doub
 
 
 	/// Graphics modes
-	buttons.push_back(button_template<Explorer>(button_type::principal_menu_root, "Graphics mode"));
-	buttons.back().menu.push_back(button_template<Explorer>(button_type::switcher, &Explorer::graphics, this, "High resolution", 1));
-	buttons.back().menu.push_back(button_template<Explorer>(button_type::switcher, &Explorer::graphics, this, "Low resolution", 0));
+	buttons.push_back(button_template<Explorer>(button_type::principal_menu_root, "Graphics"));
+	buttons.back().menu.push_back(button_template<Explorer>(button_type::menu_root, &Explorer::button_dummy, this, "Canvas resolution", -1));
+	buttons.back().menu.back().menu.push_back(button_template<Explorer>(button_type::switcher, &Explorer::graphics, this, "High resolution", 1));
+	buttons.back().menu.back().menu.push_back(button_template<Explorer>(button_type::switcher, &Explorer::graphics, this, "Low resolution", 0));
+	/// Scaling of menu and font sizes
+	buttons.back().menu.push_back(button_template<Explorer>(button_type::menu_root, &Explorer::button_dummy, this, "Menu scaling", -1));
+	buttons.back().menu.back().menu.push_back(button_template<Explorer>(button_type::switcher, &Explorer::menu_scaling, this, "x1.0", 1));
+	buttons.back().menu.back().menu.push_back(button_template<Explorer>(button_type::switcher, &Explorer::menu_scaling, this, "x1.5", 2));
+	buttons.back().menu.back().menu.push_back(button_template<Explorer>(button_type::switcher, &Explorer::menu_scaling, this, "x2.0", 3));	
+	buttons.back().menu.back().menu.push_back(button_template<Explorer>(button_type::switcher, &Explorer::menu_scaling, this, "x2.5", 4));
+	buttons.back().menu.back().menu.push_back(button_template<Explorer>(button_type::switcher, &Explorer::menu_scaling, this, "x3.0", 5));
+	// Scaling of graph drawing operations
+	buttons.back().menu.push_back(button_template<Explorer>(button_type::menu_root, &Explorer::button_dummy, this, "Plot scaling", -1));
+	buttons.back().menu.back().menu.push_back(button_template<Explorer>(button_type::switcher, &Explorer::plot_scaling, this, "x1.0", 1));
+	buttons.back().menu.back().menu.push_back(button_template<Explorer>(button_type::switcher, &Explorer::plot_scaling, this, "x1.5", 2));
+	buttons.back().menu.back().menu.push_back(button_template<Explorer>(button_type::switcher, &Explorer::plot_scaling, this, "x2.0", 3));	
+	buttons.back().menu.back().menu.push_back(button_template<Explorer>(button_type::switcher, &Explorer::plot_scaling, this, "x2.5", 4));
+	buttons.back().menu.back().menu.push_back(button_template<Explorer>(button_type::switcher, &Explorer::plot_scaling, this, "x3.0", 5));
+
+
+	
 
 	/// Compartment related commands
 	buttons.push_back(button_template<Explorer>(button_type::principal_menu_root, "Compartments"));
 	buttons.back().menu.push_back(button_template<Explorer>(button_type::switcher, &Explorer::compartments, this, "Show", 0));
 	buttons.back().menu.push_back(button_template<Explorer>(button_type::switcher, &Explorer::compartments, this, "Hide", 1));
 
-	/// Add palette
+	/// Add palettes
 	buttons.push_back(button_template<Explorer>(button_type::principal_menu_root, "Colours"));
 	buttons.back().menu.push_back(button_template<Explorer>(button_type::palette, &Explorer::palettes, this, "Active reactions", 0));
 	buttons.back().menu.push_back(button_template<Explorer>(button_type::palette, &Explorer::palettes, this, "Active species", 1));
@@ -308,7 +326,7 @@ Explorer::Explorer(string filename, const set<string> &flags, double res_X, doub
     al_register_event_source(event_queue, al_get_keyboard_event_source());
     al_start_timer(timer);
 
-    specinfo_font = al_load_ttf_font(font_file_name.c_str(),specinfo_font_size,0);
+    specinfo_font = load_ttf_font(font_file_name,specinfo_font_size,&specinfo_font);
 }
 
 Explorer::~Explorer()
@@ -317,7 +335,7 @@ Explorer::~Explorer()
     delete win;
     if(canvas!=NULL) al_destroy_bitmap(canvas);
     if(fastg_sprite!=NULL) al_destroy_bitmap(fastg_sprite);
-    if(specinfo_font!=NULL) al_destroy_font(specinfo_font);
+	clear_font_storage();
     if(timer!=NULL) al_destroy_timer(timer);
     if(display!=NULL) al_destroy_display(display);
     if(event_queue!=NULL) al_destroy_event_queue(event_queue);
@@ -501,15 +519,15 @@ int Explorer::run()
                 {
                     if(cursor == hor_resize)
                     {
-                        al_draw_filled_rectangle(mouse_x-curs_bar_w*0.5,mouse_y-curs_bar_l*0.5,mouse_x+curs_bar_w*0.5,mouse_y+curs_bar_l*0.5,resize_curs_c);
-                        al_draw_filled_triangle(mouse_x-curs_arr_w*0.5,mouse_y+curs_bar_l*0.5,mouse_x+curs_arr_w*0.5,mouse_y+curs_bar_l*0.5,mouse_x,mouse_y+curs_bar_l*0.5+curs_arr_l,resize_curs_c);
-                        al_draw_filled_triangle(mouse_x-curs_arr_w*0.5,mouse_y-curs_bar_l*0.5,mouse_x+curs_arr_w*0.5,mouse_y-curs_bar_l*0.5,mouse_x,mouse_y-curs_bar_l*0.5-curs_arr_l,resize_curs_c);
+                        al_draw_filled_rectangle(mouse_x-curs_bar_w*0.5*scaling,mouse_y-curs_bar_l*0.5*scaling,mouse_x+curs_bar_w*0.5*scaling,mouse_y+curs_bar_l*0.5*scaling,resize_curs_c);
+                        al_draw_filled_triangle(mouse_x-curs_arr_w*0.5*scaling,mouse_y+curs_bar_l*0.5*scaling,mouse_x+curs_arr_w*0.5*scaling,mouse_y+curs_bar_l*0.5*scaling,mouse_x,mouse_y+curs_bar_l*0.5*scaling+curs_arr_l*scaling,resize_curs_c);
+                        al_draw_filled_triangle(mouse_x-curs_arr_w*0.5*scaling,mouse_y-curs_bar_l*0.5*scaling,mouse_x+curs_arr_w*0.5*scaling,mouse_y-curs_bar_l*0.5*scaling,mouse_x,mouse_y-curs_bar_l*0.5*scaling-curs_arr_l*scaling,resize_curs_c);
                     }
                     else if(cursor == ver_resize)
                     {
-                        al_draw_filled_rectangle(mouse_x-curs_bar_l*0.5,mouse_y-curs_bar_w*0.5,mouse_x+curs_bar_l*0.5,mouse_y+curs_bar_w*0.5,resize_curs_c);
-                        al_draw_filled_triangle(mouse_x+curs_bar_l*0.5,mouse_y-curs_arr_w*0.5,mouse_x+curs_bar_l*0.5,mouse_y+curs_arr_w*0.5,mouse_x+curs_bar_l*0.5+curs_arr_l,mouse_y,resize_curs_c);
-                        al_draw_filled_triangle(mouse_x-curs_bar_l*0.5,mouse_y-curs_arr_w*0.5,mouse_x-curs_bar_l*0.5,mouse_y+curs_arr_w*0.5,mouse_x-curs_bar_l*0.5-curs_arr_l,mouse_y,resize_curs_c);
+                        al_draw_filled_rectangle(mouse_x-curs_bar_l*0.5*scaling,mouse_y-curs_bar_w*0.5*scaling,mouse_x+curs_bar_l*0.5*scaling,mouse_y+curs_bar_w*0.5*scaling,resize_curs_c);
+                        al_draw_filled_triangle(mouse_x+curs_bar_l*0.5*scaling,mouse_y-curs_arr_w*0.5*scaling,mouse_x+curs_bar_l*0.5*scaling,mouse_y+curs_arr_w*0.5*scaling,mouse_x+curs_bar_l*0.5*scaling+curs_arr_l*scaling,mouse_y,resize_curs_c);
+                        al_draw_filled_triangle(mouse_x-curs_bar_l*0.5*scaling,mouse_y-curs_arr_w*0.5*scaling,mouse_x-curs_bar_l*0.5*scaling,mouse_y+curs_arr_w*0.5*scaling,mouse_x-curs_bar_l*0.5*scaling-curs_arr_l*scaling,mouse_y,resize_curs_c);
                     }
                     cursor=normal;
                 }
@@ -524,7 +542,7 @@ int Explorer::run()
 
 			if(first_time && !model->empty()) 
 			{
-				Loading l(display, disp_map, 100, al_get_display_width(display)*0.5, al_get_display_height(display)*0.5, this, &Explorer::make_layout); 
+				Loading l(display, disp_map, 100, al_get_display_width(display)*0.5, al_get_display_height(display)*0.5, scaling, this, &Explorer::make_layout); 
 			}
 			first_time = false;
 
@@ -1461,12 +1479,12 @@ void Explorer::draw_spec_info(int hit)
 		}
 
 		BITMAP * temp;
-		temp = al_create_bitmap(al_get_text_width(specinfo_font, info.c_str()) + specinfo_font_size, specinfo_font_size*1.5);
+		temp = al_create_bitmap(al_get_text_width(specinfo_font, info.c_str()) + specinfo_font_size*scaling, specinfo_font_size*scaling*1.5);
 		al_set_target_bitmap(temp);
 		al_clear_to_color(graph_bckgr_c);
 		double h_mar, v_mar;
 		win->Get_cust_margins(h_mar, v_mar);
-		al_draw_textf(specinfo_font, specinfo_c, specinfo_font_size*0.5, 0, ALLEGRO_ALIGN_LEFT, "%s", info.c_str());
+		al_draw_textf(specinfo_font, specinfo_c, specinfo_font_size*scaling*0.5, 0, ALLEGRO_ALIGN_LEFT, "%s", info.c_str());
 		al_set_target_bitmap(al_get_backbuffer(display));
 		al_draw_bitmap(temp, x_0 + h_mar, y_0 + v_mar, 0);
 		if(temp!=NULL) al_destroy_bitmap(temp);
@@ -1487,14 +1505,14 @@ void Explorer::draw_comp_info(const vector<string> &hits)
     for(int i=0;i<2;i++) info.pop_back();
 
     BITMAP * temp;
-    temp = al_create_bitmap(al_get_text_width(specinfo_font,info.c_str())+specinfo_font_size,specinfo_font_size*1.5);
+    temp = al_create_bitmap(al_get_text_width(specinfo_font,info.c_str())+specinfo_font_size*scaling,specinfo_font_size*scaling*1.5);
     al_set_target_bitmap(temp);
     al_clear_to_color(graph_bckgr_c);
     double h_mar, v_mar;
     win->Get_cust_margins(h_mar,v_mar);
-    al_draw_textf(specinfo_font,compart_line_c,specinfo_font_size*0.5,0,ALLEGRO_ALIGN_LEFT,"%s",info.c_str());
+    al_draw_textf(specinfo_font,compart_line_c,specinfo_font_size*scaling*0.5,0,ALLEGRO_ALIGN_LEFT,"%s",info.c_str());
     al_set_target_bitmap(al_get_backbuffer(display));
-    al_draw_bitmap(temp,x_0+h_mar,y_0+v_mar+specinfo_font_size*1.5,0);
+    al_draw_bitmap(temp,x_0+h_mar,y_0+v_mar+specinfo_font_size*scaling*1.5,0);
     if(temp!=NULL) al_destroy_bitmap(temp);
 }
 
@@ -3005,14 +3023,14 @@ void Explorer::file_action_dialogue(int n, string &s)
         al_pause_event_queue(event_queue,true);
         al_flush_event_queue(event_queue);
 
-		al_set_new_display_option(ALLEGRO_SAMPLE_BUFFERS, 2, ALLEGRO_SUGGEST);
-		al_set_new_display_option(ALLEGRO_SAMPLES, 4, ALLEGRO_SUGGEST);
+		al_set_new_display_option(ALLEGRO_SAMPLE_BUFFERS, 1, ALLEGRO_SUGGEST);
+		al_set_new_display_option(ALLEGRO_SAMPLES, 8, ALLEGRO_SUGGEST);
 
         int dis_num = al_get_num_video_adapters();
         ALLEGRO_MONITOR_INFO inf;
         al_get_monitor_info(dis_num-1, &inf);
-        double height = 600;
-        double width = 800;
+        double height = scaling*600;
+        double width = scaling*800;
 
         al_set_new_window_position(0.5*((inf.x2-inf.x1)-width),0.5*((inf.y2-inf.y1)-height));
         al_set_new_display_flags(ALLEGRO_WINDOWED | ALLEGRO_OPENGL);
@@ -3043,7 +3061,7 @@ void Explorer::file_action_dialogue(int n, string &s)
         string file_name;
         Filehandler::action act;
         Filehandler::mode mod = (n==1) ? Filehandler::open : (n==3 || n==4 || n==6) ? Filehandler::save_as : Filehandler::save_as;
-        Filehandler * filh = new Filehandler(file_disp,mod,&act,&file_name);
+        Filehandler * filh = new Filehandler(file_disp,mod,&act,&file_name,scaling);
 
         bool redraw = true;
         queue<event_type> events;
@@ -3143,7 +3161,7 @@ void Explorer::file_action_dialogue(int n, string &s)
 							{
 								int OK;
 								vector<string> buts = { "Cancel","Try another name" };
-								Warning w(ev_q, "A file with this name does not exist!", buts, &OK);
+								Warning w(ev_q, "A file with this name does not exist!", buts, &OK, scaling);
 								al_set_target_backbuffer(file_disp);
 								if (OK == 1) act = Filehandler::none;
 							}
@@ -3154,7 +3172,7 @@ void Explorer::file_action_dialogue(int n, string &s)
 							{
 								int OK;
 								vector<string> buts = { "Cancel","Try another name","Save over" };
-								Warning w(ev_q, "A file with this name already exists!", buts, &OK);
+								Warning w(ev_q, "A file with this name already exists!", buts, &OK, scaling);
 								al_set_target_backbuffer(file_disp);
 								if (OK == 2)
 								{
@@ -3194,8 +3212,8 @@ void Explorer::file_action_dialogue(int n, string &s)
 
 		if (LOAD_MODEL)
 		{
-			Loading l(display, disp_map, 100, al_get_display_width(display)*0.5, al_get_display_height(display)*0.5, this, &Explorer::load_FBA_model, file_name);
-			if (!model->empty()) Loading l(display, disp_map, 100, al_get_display_width(display)*0.5, al_get_display_height(display)*0.5, this, &Explorer::make_layout);
+			Loading l(display, disp_map, 100, al_get_display_width(display)*0.5, al_get_display_height(display)*0.5, scaling, this, &Explorer::load_FBA_model, file_name);
+			if (!model->empty()) Loading l(display, disp_map, 100, al_get_display_width(display)*0.5, al_get_display_height(display)*0.5, scaling, this, &Explorer::make_layout);
 		}
     }
     else if(n==0)
@@ -3415,17 +3433,17 @@ void Explorer::edit(int n, string &s)
     }
     else if(n==2)
     {
-		if(!model->empty()) Loading l(display,disp_map,100,al_get_display_width(display)*0.5,al_get_display_height(display)*0.5,this,&Explorer::make_layout);
+		if(!model->empty()) Loading l(display,disp_map,100, al_get_display_width(display)*0.5,al_get_display_height(display)*0.5, scaling,this,&Explorer::make_layout);
         scr_upd=true;
     }
     else if(n==3)
     {
-		if(!model->empty()) Loading l(display,disp_map,100,al_get_display_width(display)*0.5,al_get_display_height(display)*0.5,this,&Explorer::update_blocked,true);
+		if(!model->empty()) Loading l(display,disp_map,100, al_get_display_width(display)*0.5,al_get_display_height(display)*0.5, scaling,this,&Explorer::update_blocked,true);
 		scr_upd=true;
     }
     else if(n==4)
     {
-		if(!model->empty()) Loading l(display,disp_map,100,al_get_display_width(display)*0.5,al_get_display_height(display)*0.5,this,&Explorer::update_blocked,false);
+		if(!model->empty()) Loading l(display,disp_map,100, al_get_display_width(display)*0.5,al_get_display_height(display)*0.5, scaling,this,&Explorer::update_blocked,false);
 		scr_upd=true;
     }
 }
@@ -3451,7 +3469,7 @@ void Explorer::view(int n, string &s)
 			}
 			// Replot and update the arrays 
 			update_arrays();
-			Loading l(display, disp_map, 100, al_get_display_width(display)*0.5, al_get_display_height(display)*0.5, this, &Explorer::make_layout);
+			Loading l(display, disp_map, 100, al_get_display_width(display)*0.5, al_get_display_height(display)*0.5, scaling, this, &Explorer::make_layout);
 		}
 	}
 	else if(n==2)
@@ -3659,6 +3677,66 @@ void Explorer::graphics(int n, string &s)
     scr_upd = true;
 }
 
+void Explorer::menu_scaling(int n, string &s)
+{
+    if(n==1) scaleMenus(1.0);
+    else if(n==2) scaleMenus(1.5);
+	else if(n==3) scaleMenus(2.0);
+	else if(n==4) scaleMenus(2.5);
+	else if(n==5) scaleMenus(3.0);
+    scr_upd = true; 
+}
+
+void Explorer::plot_scaling(int n, string &s)
+{
+    if(n==1) scalePlot(1.0);
+    else if(n==2) scalePlot(1.5);
+	else if(n==3) scalePlot(2.0);
+	else if(n==4) scalePlot(2.5);
+	else if(n==5) scalePlot(3.0);
+    scr_upd = true; 
+}
+
+void Explorer::scaleMenus(double factor)
+{
+	if(win!=NULL)
+	{
+		// Scale the fonts 
+		set_font_scaling(factor);
+		// Scale the element sizes
+		win->set_scaling(factor);
+	}
+	scaling = factor;
+}
+
+void Explorer::scalePlot(double factor)
+{
+	// Scale all the drawing parameters
+	double scale_ratio = factor/p_scaling;
+	p_scaling = factor;
+
+	ers_crosshand_l*=scale_ratio; 
+	ers_crosshand_w*=scale_ratio;
+	ers_cross_border_w*=scale_ratio;
+	BM_line_w*=scale_ratio;
+
+	node_r*=scale_ratio;
+	uninit_node_r*=scale_ratio;
+	obj_node_r*=scale_ratio;
+	high_node_r*=scale_ratio;
+	search_node_r*=scale_ratio;
+	search_node_th*=scale_ratio;
+	line_w*=scale_ratio;
+	arrow_w*=scale_ratio;
+	arrow_l*=scale_ratio;
+
+	compart_line_t*=scale_ratio;
+	compart_line_on_t*=scale_ratio;
+	compart_r*=scale_ratio;
+
+	bold_line_w*=scale_ratio;
+}
+
 void Explorer::compartments(int n, string &s)
 {
     if(n==0) draw_comparts = true;
@@ -3673,7 +3751,7 @@ void Explorer::palettes(int n, string &s)
         string s = to_string(n);
         if(s.length()==1) return "00"+s;
         else if(s.length()==2) return "0"+s;
-        else if(s.length()==3) return s;
+        else return s;
     };
     auto conv = [&lengthen] (COL &c)
     {
@@ -4801,9 +4879,9 @@ void Explorer::spec_reac_manipulate(int n, string &s)
 }
 
 template<class R, class T, class... Args>
-Loading::Loading(ALLEGRO_DISPLAY * disp, ALLEGRO_BITMAP * disp_map, double circle_r, double pos_x, double pos_y, T * cb_ob, R (T::*cb_fun_ptr)(Args...), Args... args)
+Loading::Loading(ALLEGRO_DISPLAY * disp, ALLEGRO_BITMAP * disp_map, double circle_r, double pos_x, double pos_y, double scaling, T * cb_ob, R (T::*cb_fun_ptr)(Args...), Args... args)
 {
-    FONT * font = al_load_ttf_font(font_file_name.c_str(),circle_r*font_size_frac,0);
+    FONT * font = load_ttf_font(font_file_name,scaling*circle_r*font_size_frac,&font);
     bool check = false;
     auto waiting_thread = [] (bool &check,mutex &mtx, T * cb_ob, R (T::*cb_fun_ptr)(Args...), Args... args)
     {
@@ -4816,7 +4894,7 @@ Loading::Loading(ALLEGRO_DISPLAY * disp, ALLEGRO_BITMAP * disp_map, double circl
     mutex mtx;
     thread th (waiting_thread,ref(check),ref(mtx),cb_ob,cb_fun_ptr,args...);
     /// Display the waiting animation
-    mover m(pos_x,pos_y,circle_r-border_t*circle_r,FPS);
+    mover m(pos_x,pos_y,scaling*(circle_r-border_t*circle_r),FPS);
 
     ALLEGRO_TIMER * tim = al_create_timer(1.0 / FPS);
     if(!tim) fprintf(stderr, "\nLoading animation class failed to create timer!\n");
@@ -4841,9 +4919,9 @@ Loading::Loading(ALLEGRO_DISPLAY * disp, ALLEGRO_BITMAP * disp_map, double circl
         if(redraw && al_is_event_queue_empty(ev_q))
         {
             al_draw_bitmap(disp_map,0,0,0);
-            al_draw_filled_circle(pos_x,pos_y,circle_r-border_t*circle_r,circle_c);
-            al_draw_circle(pos_x,pos_y,circle_r-0.5*border_t*circle_r,circle_b_c,border_t*circle_r);
-            al_draw_text(font,text_c,pos_x,pos_y-circle_r*font_size_frac*0.73,ALLEGRO_ALIGN_CENTRE,"Please wait");
+            al_draw_filled_circle(pos_x,pos_y,scaling*(circle_r-border_t*circle_r),circle_c);
+            al_draw_circle(pos_x,pos_y,scaling*(circle_r-0.5*border_t*circle_r),circle_b_c,border_t*circle_r*scaling);
+            al_draw_text(font,text_c,pos_x,pos_y-scaling*circle_r*font_size_frac*0.73,ALLEGRO_ALIGN_CENTRE,"Please wait");
             m.step_and_draw();
             al_flip_display();
             redraw=false;
@@ -4854,7 +4932,7 @@ Loading::Loading(ALLEGRO_DISPLAY * disp, ALLEGRO_BITMAP * disp_map, double circl
 
     if(tim!=NULL) al_destroy_timer(tim);
     if(ev_q!=NULL) al_destroy_event_queue(ev_q);
-    if(font!=NULL) al_destroy_font(font);
+    attempt_destroy_font(font_file_name,circle_r*font_size_frac,&font);
 }
 
 Loading::mover::mover(double pos_x,double pos_y,double circle_r,double FPS) : pos_x(pos_x), pos_y(pos_y), circle_r(circle_r), FPS(FPS)

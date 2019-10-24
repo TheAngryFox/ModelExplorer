@@ -60,7 +60,7 @@ class specium
 	void mask() {cm = true;};
 	void unmask() {cm = false;};
 	bool ismasked() const {return cm;};
-	double flip() {swap(coor,coor_back); swap(cm,cbm);}
+	void flip() {swap(coor,coor_back); swap(cm,cbm);}
 
     template<class Archive>
     void serialize(Archive & ar,const unsigned int version)
@@ -115,7 +115,7 @@ class reaction
 	void mask() {cm = true;};
 	void unmask() {cm = false;};
 	bool ismasked() const {return cm;};
-	double flip() {swap(coor,coor_back); swap(cm,cbm);}
+	void flip() {swap(coor,coor_back); swap(cm,cbm);}
 
     template<class Archive>
     void serialize(Archive & ar,const unsigned int version)

@@ -61,6 +61,11 @@ using Array = vector<vector<T> >;
 
 class Explorer;
 
+FONT* load_ttf_font(const string &font_path, int font_size, FONT** back_pointer); // Conservative loading function which ensures every font size/path combination is only loaded once
+void attempt_destroy_font(const string &font_path, int font_size, FONT** back_pointer); 
+void clear_font_storage();
+void set_font_scaling (double factor);
+
 enum struct event_type {idle,move_mouse,m_leave_disp,rmb_down,lmb_down,rmb_up,lmb_up,scroll,keyboard};
 enum struct response_type {do_nothing,load_model,zoom,lmb_down_custom,lmb_up_custom,lmb_move_mouse,rmb_down_custom,rmb_up_custom,rmb_move_mouse,cust_move_mouse,
                     ver_area_resize,hor_area_resize,ver_area_resize_hov,hor_area_resize_hov,at_least_inside,special_lock,lmb_click,tab_key};
@@ -73,6 +78,7 @@ protected:
     string name;
     double x0, y0, x1, y1;
     bool on;
+    double scaling = 1.0;
 public:
     Area(double x0, double y0, double x1, double y1, bool on) : x0(x0), y0(y0), x1(x1), y1(y1), on(on) {};
     Area() : x0(-1), y0(-1), x1(-1), y1(-1), on(true) {};
@@ -83,6 +89,7 @@ public:
     virtual response_type respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt,double mouse_x,double mouse_y,double mouse_dz,int &lock,event_type &hold_event,int in, pair<char,char> input)=0;
     virtual double get_min_x_dim()=0;
     virtual double get_min_y_dim()=0;
+    virtual void set_scaling(double factor)=0;
     bool is_on() {return on;};
     void turn_on() {on = true;};
     void turn_off() {on = false;};
@@ -114,16 +121,18 @@ public:
     void change_scroll(double y0, double y1, double frac);
     response_type respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt,double mouse_x,double mouse_y,double mouse_dz,int &lock,event_type &hold_event,int in,pair<char,char> input);
     double get_min_x_dim() {return x1-x0;};
-    double get_min_y_dim() {return 2*v_margin+2*((x1-x0)-2*h_margin);};
+    double get_min_y_dim() {return 2*v_margin*scaling+2*((x1-x0)-2*h_margin*scaling);};
 	double get_min_tot_height() { return 2 * v_margin + ((x1 - x0) - 2 * h_margin); };
     double where_is_bar();
 	void reset_bar();
-	void rescale_bar(double rat) { fraction = min(rat,1.0);  bar_height = max(fraction * (y1 - y0 - 2 * v_margin), x1 - x0 - 2 * h_margin); };
+	void rescale_bar(double rat) { fraction = min(rat,1.0);  bar_height = max(fraction * (y1 - y0 - 2 * v_margin*scaling), x1 - x0 - 2 * h_margin*scaling); };
     int where_is_mouse(double m_x,double m_y);
     double mov(double d_pos);
 	void set_barpos_by_rat(double new_rat);
     void draw(ALLEGRO_DISPLAY * disp);
+    void set_scaling(double factor);
     void bar_moving(bool mov) {bar_mov=mov;};
+    void shift(double dx,double dy) {x0+=dx; x1+=dx; y0+=dy; y1+=dy;}
 };
 
 template<class T>
@@ -157,40 +166,42 @@ private:
 	/// 
 
     string font_file_name = "arial.ttf";
-    int font_size = 20;
-    int title_font_size = 20;
+    int font_size;
+    int title_font_size;
     double line_spacing = 1.5;
 
     double v_margin = 0;
     double h_margin = 0;
-    double h_space = 10;
-    double title_h_space = 10;
-    double separator_h = 2;
-	double selectable_separator_h = 0;
+    double h_space; // 0.5 of font size 
+    double title_h_space; // 0.5 of title font size
+    double separator_h; // 0.1 of font size
+	double selectable_separator_h = 0; 
     double scroll_lines = 1.7;
 
     double title_height;
     double text_height;
     double where_bar_is;
 public:
-    Text(double x0, double y0, double x1, double y1, bool on, vector<string> str);
-	Text(double x0, double y0, double x1, double y1, bool on, vector<string> str, cb_fun_ptr cb_fun, T * cb_ob, int id);
-    ~Text() {if(full_text!=NULL) al_destroy_bitmap(full_text); if(font!=NULL) al_destroy_font(font); if(title_font!=NULL) al_destroy_font(title_font);};
+    Text(double x0, double y0, double x1, double y1, bool on, vector<string> str, int font_size = 20, int title_font_size = 20);
+	Text(double x0, double y0, double x1, double y1, bool on, vector<string> str, cb_fun_ptr cb_fun, T * cb_ob, int id, int font_size = 20, int title_font_size = 20);
+    ~Text() {if(full_text!=NULL) al_destroy_bitmap(full_text); attempt_destroy_font(font_file_name,font_size,&font); attempt_destroy_font(font_file_name,title_font_size,&title_font);};
     void Change_text(vector<string> str);
     void Resize (double x_0, double y_0, double x_1, double y_1);
     response_type respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt,double mouse_x,double mouse_y,double mouse_dz,int &lock,event_type &hold_event,int in,pair<char,char> input);
-    double get_min_x_dim() {return 2*h_margin+2*max(h_space,title_h_space)+3*title_font_size;};
-    double get_min_y_dim() {return 2*v_margin+3*title_font_size;};
-    double get_frac() {return (y1-y0-2*v_margin-title_height)/text_height;};
-	double get_min_tot_height () { return 2 * v_margin + title_height + text_height; };
+    double get_min_x_dim() {return 2*h_margin*scaling+2*max(h_space,title_h_space)*scaling+3*title_font_size*scaling;};
+    double get_min_y_dim() {return 2*v_margin*scaling+3*title_font_size*scaling;};
+    double get_frac() {return (y1-y0-2*v_margin*scaling-title_height)/text_height;};
+	double get_min_tot_height () { return scaling * (2 * v_margin) + title_height + text_height; };
 	bool text_empty() { return (tex.empty()) ? true : false; }
     void set_pos(double Where_bar_is) {where_bar_is=Where_bar_is;};
     void draw(ALLEGRO_DISPLAY * disp);
+    void set_scaling(double factor);
     void redraw(ALLEGRO_DISPLAY * disp);
 	int tab_from_pos(double mouse_x, double mouse_y);
     double get_scroll_lines() {return scroll_lines;};
     int get_font_size() {return font_size;};
     double get_line_spacing() {return line_spacing;};
+    void shift(double dx,double dy) {x0+=dx; x1+=dx; y0+=dy; y1+=dy;}
 };
 
 template <class T>
@@ -201,7 +212,7 @@ private:
 	typedef void (T::*cb_fun_ptr)(int n, vector<string> &s, int select, bool &new_text);
 	double max_size;
 
-    double scroll_w = 32;
+    double scroll_w; // equal to font size / 5 * 8
     double v_margin, h_margin;
 	COL margin_c;
     Text<T> * t = NULL;
@@ -209,7 +220,7 @@ private:
 
 	int text_lock = -1;
 public:
-    Text_view(double x0, double y0, double x1, double y1, bool on, vector<string> &str, double v_margin = 0, double h_margin = 0, COL margin_c = al_map_rgb(0, 0, 0), double max_size = -1, cb_fun_ptr cb_fun = NULL, T * cb_ob = NULL, int id = -1);
+    Text_view(double x0, double y0, double x1, double y1, bool on, vector<string> &str, int font_size = 20, int title_font_size = 20, double v_margin = 0, double h_margin = 0, COL margin_c = al_map_rgb(0, 0, 0), double max_size = -1, cb_fun_ptr cb_fun = NULL, T * cb_ob = NULL, int id = -1);
     ~Text_view() {if(t!=NULL) delete t; if(s!=NULL) delete s;};
     void Resize (double x_0, double y_0, double x_1, double y_1);
     void Change_text(vector<string> &str);
@@ -222,6 +233,8 @@ public:
 	void clean();
 	void check_height(ALLEGRO_DISPLAY * disp);
     void draw(ALLEGRO_DISPLAY * disp);
+    void set_scaling(double factor);
+    void shift(double dx,double dy);
 };
 
 template<class T>
@@ -320,12 +333,13 @@ private:
 public:
     Button(double x_0, double y_0, double font_size, string font_file_name, button_template<T> t, double margin, double space, double corner_r, COL button_c, COL p_button_c, COL margin_c, COL p_margin_c, COL font_c, COL p_font_c);
     Button(double x0, double y0, double x1, double y1, double font_size, string font_file_name, button_template<T> t, double margin, double space, double corner_r, COL button_c, COL p_button_c, COL margin_c, COL p_margin_c, COL font_c, COL p_font_c, COL tick_c);
-    ~Button() {if(font!=NULL) al_destroy_font(font); if(huebar!=NULL) al_destroy_bitmap(huebar); delete menu; delete Pick; delete Reset; delete Default;};
+    ~Button() {attempt_destroy_font(font_file_name,font_size,&font); if(huebar!=NULL) al_destroy_bitmap(huebar); delete menu; delete Pick; delete Reset; delete Default;};
     response_type respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt,double mouse_x,double mouse_y,double mouse_dz,int &lock,event_type &hold_event,int in,pair<char,char> input);
-    void Resize (double x_0, double y_0, double x_1, double y_1) {};
+    void Resize (double x_0, double y_0, double x_1, double y_1);
     double get_min_x_dim() {return x1-x0;};
     double get_min_y_dim() {return y1-y0;};
     void draw(ALLEGRO_DISPLAY * disp);
+    void set_scaling(double factor);
     void run_function() {string reply; (cb_ob->*cb_fun)(id,reply);};
     void unhighlight();
     void activate() {active=true;};
@@ -337,6 +351,8 @@ public:
     void set_params_from_col();
     void send_colour();
     button_type get_k() {return k;};
+    FONT * get_font() {return font;};
+    string get_title() {return title;};
 };
 
 template<class T>
@@ -373,7 +389,7 @@ private:
 	cb_fun_ptr1 cb_fun1 = NULL;
 	cb_fun_ptr2 cb_fun2 = NULL;
 	T * cb_ob;
-	Text_view<Text_input> * t_view;
+	Text_view<Text_input> * t_view = NULL;
 	int list_lock = -1;
 	bool unlock_next_round = false;
 
@@ -392,6 +408,7 @@ private:
 	FONT * font = NULL;
 
 	double box_x0, box_y0, box_x1, box_y1;
+    double text_view_w, text_max_h, input_w;
 
 	bool highlight = false;
 	bool initialized = false;
@@ -407,14 +424,16 @@ public:
 			if (with_list) (cb_ob->*cb_fun2)(id, vs, -3, b);
 			else (cb_ob->*cb_fun1)(id, s);
 		}
-		if(font!=NULL) al_destroy_font(font); 
-		if (with_list) delete t_view; 
+		attempt_destroy_font(font_file_name,g.font_size,&font);
+		if (t_view!=NULL) delete t_view; 
 	};
 	response_type respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt, double mouse_x, double mouse_y, double mouse_dz, int &lock, event_type &hold_event, int in, pair<char, char> input);
-	void Resize(double x_0, double y_0, double x_1, double y_1) {};
+	void Resize(double x_0, double y_0, double x_1, double y_1);
 	double get_min_x_dim() { return x1 - x0; };
 	double get_min_y_dim() { return y1 - y0; };
 	void draw(ALLEGRO_DISPLAY * disp);
+    void set_scaling(double factor);
+    void set_just_scaling(double factor) {scaling = factor;};
 	void high() { highlight = true; };
 	void unhigh() { highlight = false; };
 	void shift(double dx, double dy);
@@ -455,6 +474,7 @@ public:
 	void shift(double dx, double dy);
 	void set_length(int len);
 	void draw(ALLEGRO_DISPLAY * disp);
+    void set_scaling(double factor);
 };
 
 template <class T>
@@ -503,7 +523,7 @@ private:
 
 public:
 	Input_view(double x0, double y0, double x1, double y1, bool on, string title, inp_view_template<T> t);
-	~Input_view() { for (auto& i : buttons) delete i; for (auto& i : text_inputs) delete i; delete s; if(title_font!=NULL) al_destroy_font(title_font); };
+	~Input_view() { for (auto& i : buttons) delete i; for (auto& i : text_inputs) delete i; for(auto &i: input_lists) delete i; delete s; attempt_destroy_font(font_file_name,title_font_height,&title_font); };
 	void Resize(double x_0, double y_0, double x_1, double y_1);
 	response_type respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt, double mouse_x, double mouse_y, double mouse_dz, int &lock, event_type &hold_event, int in, pair<char, char> input);
 	double get_min_x_dim() { return s->get_min_x_dim() * 2;  };
@@ -525,6 +545,7 @@ public:
 	void adjust_y(double orig_dimy, Input_list<T> *i);
 	void set_list_length(int in, int len) { if (in < input_lists.size()) input_lists[in]->set_length(len); else printf("\nError: Trying to access non-existing list!\n\n"); };
 	void draw(ALLEGRO_DISPLAY * disp);
+    void set_scaling(double factor);
 };
 
 template<class T>
@@ -555,6 +576,7 @@ public:
     double get_min_x_dim() {return x1-x0;};
     double get_min_y_dim() {return y1-y0;};
     void draw(ALLEGRO_DISPLAY * disp);
+    void set_scaling(double factor);
     void unhighlight();
     void shift(double dx,double dy);
 };
@@ -603,6 +625,7 @@ public:
     double get_min_x_dim();
     double get_min_y_dim();
     void draw(ALLEGRO_DISPLAY * disp);
+    void set_scaling(double factor);
 };
 
 class Resize_bar: public Area
@@ -616,9 +639,10 @@ public:
     Resize_bar(vector<Area *> areas,vector<int> dims);
     void Resize(double x_0,double y_0,double x_1,double y_1) {x0=x_0;y0=y_0;x1=x_1;y1=y_1;};
     void draw(ALLEGRO_DISPLAY * disp) {};
+    void set_scaling(double factor);
     response_type respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt,double mouse_x,double mouse_y,double mouse_dz,int &lock,event_type &hold_event,int in,pair<char,char> input);
-    double get_min_x_dim() {return width;};
-    double get_min_y_dim() {return width;};
+    double get_min_x_dim() {return width*scaling;};
+    double get_min_y_dim() {return width*scaling;};
     void fit();
 };
 
@@ -634,9 +658,10 @@ public:
     void Resize (double x_0, double y_0, double x_1, double y_1);
     void get_margins(double &h_mar,double &v_mar) {h_mar=h_margin; v_mar=v_margin;};
     response_type respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt,double mouse_x,double mouse_y,double mouse_dz,int &lock,event_type &hold_event,int in,pair<char,char> input);
-    double get_min_x_dim() {return 4*h_margin;};
-    double get_min_y_dim() {return 4*v_margin;};
+    double get_min_x_dim() {return 4*h_margin*scaling;};
+    double get_min_y_dim() {return 4*v_margin*scaling;};
     void draw(ALLEGRO_DISPLAY * disp);
+    void set_scaling(double factor);
 };
 
 template<class T>
@@ -645,6 +670,8 @@ class Window
 public:
 	enum side_pane {neighbour_info,edit_spec, edit_reac, edit_compart, add_spec, add_reac, add_compart};
 private:
+    double scaling = 1.0;
+
 	side_pane mode = neighbour_info;
     ALLEGRO_DISPLAY * disp = NULL;
     COL margin_c = al_map_rgb(0,100,0);
@@ -683,6 +710,7 @@ public:
 	void clear_current_mode();
     response_type respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt,double mouse_x,double mouse_y,double mouse_dz,pair<char,char> input);
     void draw();
+    void set_scaling(double factor);
 };
 
 class Warning
@@ -696,7 +724,6 @@ private:
     double but_font_size = 20;
     double line_spacing = 1.2;
 
-    double res_x = 600;
     double but_margin = 3;
     double but_space = 10;
     double but_corner_r = 10;
@@ -719,12 +746,12 @@ private:
     event_type hold_event = event_type::idle;
     int * action;
 
-    response_type respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt,double mouse_x,double mouse_y,double mouse_dz,pair<char,char> input);
+    response_type respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt,double mouse_x,double mouse_y,double mouse_dz, pair<char,char> input);
     void do_action(int n, string &s);
     void draw();
 
 public:
-    Warning(ALLEGRO_EVENT_QUEUE * event_queue, string message, vector<string> b_text, int * action);
+    Warning(ALLEGRO_EVENT_QUEUE * event_queue, string message, vector<string> b_text, int * action, double scaling);
     ~Warning() {for(auto i:buttons) delete i;};
 };
 
@@ -734,6 +761,7 @@ public:
     enum mode {open,save_as};
     enum action {none,cancel,do_it};
 private:
+    double scaling = 1.0;
     mode mod;
     action * act = NULL;
     string * file_name = NULL;
@@ -787,7 +815,7 @@ private:
     int lock = -1;
     event_type hold_event = event_type::idle;
 public:
-    Filehandler(ALLEGRO_DISPLAY * disp,mode mod,action * act,string * file_name);
+    Filehandler(ALLEGRO_DISPLAY * disp,mode mod,action * act,string * file_name, double scaling);
     ~Filehandler() {for(auto i:areas) delete i;};
 	void change_folder(string folder_name);
 	void click_folder(int n, vector<string> &s, int select, bool &new_text);
@@ -797,7 +825,7 @@ public:
 	string get_current_path() { return current_path; }
     int get_lock() {return lock;};
 	void clear_input() { if (input != NULL) input->clear_input(); }
-    response_type respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt,double mouse_x,double mouse_y,double mouse_dz,pair<char,char> input);
+    response_type respond_to_event(ALLEGRO_DISPLAY * disp, event_type evt,double mouse_x,double mouse_y,double mouse_dz, pair<char,char> input);
     void draw();
 };
 
@@ -837,7 +865,7 @@ class Loading
 
     public:
     template<class R, class T, class... Args>
-    Loading(ALLEGRO_DISPLAY * disp, ALLEGRO_BITMAP * disp_map, double circle_r, double pos_x, double pos_y, T * cb_ob, R (T::*cb_fun_ptr)(Args...), Args... args);
+    Loading(ALLEGRO_DISPLAY * disp, ALLEGRO_BITMAP * disp_map, double circle_r, double pos_x, double pos_y, double scaling, T * cb_ob, R (T::*cb_fun_ptr)(Args...), Args... args);
 };
 
 class Explorer
@@ -846,7 +874,10 @@ public:
     ALLEGRO_DISPLAY * display = NULL;
     BITMAP * disp_map = NULL;
 private:
-    string VERSION = "ModelExplorer 2.0";
+    double scaling = 1.0;
+    double p_scaling = 1.0;
+
+    string VERSION = "ModelExplorer 2.2";
     string FILE_NAME;
     COL graph_bckgr_c = al_map_rgb(255,255,255);
 
@@ -863,7 +894,7 @@ private:
 	bool print_times = false;
 	bool print_fps = false;
 
-    Window<Explorer> * win;
+    Window<Explorer> * win = NULL;
     double res_x;
     double res_y;
 
@@ -950,7 +981,7 @@ private:
 
 	int arrays_upd_after_ccheck = 0;
 
-	double ers_crosshand_l = 12;
+	double ers_crosshand_l = 12; 
 	double ers_crosshand_w = 9;
 	double ers_cross_border_w = 3.0;
 	double BM_line_w = 3;
@@ -1074,6 +1105,10 @@ private:
     void tracking(int n, string &s);
     void blocking(int n, string &s);
     void graphics(int n, string &s);
+    void menu_scaling(int n, string &s);
+    void plot_scaling(int n, string &s);
+    void scaleMenus(double factor);
+    void scalePlot(double factor);
     void compartments(int n, string &s);
     void palettes(int n, string &s);
     void button_dummy(int n, string &s) {};
